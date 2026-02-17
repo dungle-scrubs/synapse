@@ -6,8 +6,24 @@
  * `completeSimple` for in-process inference — no CLI subprocess.
  */
 
-import { completeSimple, getModel, getModels, getProviders } from "@mariozechner/pi-ai";
+import { getModel, getModels, getProviders } from "@mariozechner/pi-ai";
 import type { ClassificationResult, TaskComplexity, TaskType } from "./types.js";
+
+/**
+ * Lazy-loaded completeSimple to avoid static import of pi-ai's stream module.
+ *
+ * pi-ai re-exports completeSimple from stream.js, which has side-effect
+ * imports loading all provider SDKs. These fail to resolve in some
+ * environments (e.g. Linux CI without native deps). Lazy loading defers
+ * resolution to call time, when the consumer has the real pi-ai available.
+ */
+async function lazyCompleteSimple(
+	model: unknown,
+	context: unknown
+): Promise<{ content: Array<{ type: string; text?: string }> }> {
+	const { completeSimple } = await import("@mariozechner/pi-ai");
+	return completeSimple(model as never, context as never);
+}
 
 /** Valid task types for validation. */
 const VALID_TYPES: ReadonlySet<string> = new Set<TaskType>(["code", "vision", "text"]);
@@ -145,7 +161,7 @@ export async function classifyTask(
 
 	try {
 		const model = getModel(cheapest.provider as never, cheapest.id as never);
-		const response = await completeSimple(model, {
+		const response = await lazyCompleteSimple(model, {
 			messages: [
 				{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() },
 			],
