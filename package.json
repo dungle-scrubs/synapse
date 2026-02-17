@@ -24,7 +24,7 @@
 	"scripts": {
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test",
+		"test": "bun test --preload ./__tests__/preload.ts",
 		"lint": "biome check src/ __tests__/",
 		"lint:fix": "biome check --write src/ __tests__/"
 	},
