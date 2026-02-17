@@ -1,0 +1,32 @@
+{
+	"name": "synapse",
+	"version": "0.1.0",
+	"description": "Model capability matrix, fuzzy resolver, task classifier, and selection algorithm for pi-ai models",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": ["dist", "README.md", "CHANGELOG.md"],
+	"peerDependencies": {
+		"@mariozechner/pi-ai": ">=0.50.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@mariozechner/pi-ai": "0.52.12",
+		"@types/bun": "^1.2.5",
+		"typescript": "^5.7.3"
+	},
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"lint": "biome check src/ __tests__/",
+		"lint:fix": "biome check --write src/ __tests__/"
+	},
+	"license": "MIT"
+}
