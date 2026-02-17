@@ -28,5 +28,10 @@
 		"lint": "biome check src/ __tests__/",
 		"lint:fix": "biome check --write src/ __tests__/"
 	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dungle-scrubs/synapse.git"
+	},
+	"author": "Kevin Frilot",
 	"license": "MIT"
 }
