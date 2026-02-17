@@ -1,6 +1,6 @@
 {
 	"name": "@dungle-scrubs/synapse",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Model capability matrix, fuzzy resolver, task classifier, and selection algorithm for pi-ai models",
 	"type": "module",
 	"main": "dist/index.js",
@@ -11,7 +11,11 @@
 			"types": "./dist/index.d.ts"
 		}
 	},
-	"files": ["dist", "README.md", "CHANGELOG.md"],
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md"
+	],
 	"peerDependencies": {
 		"@mariozechner/pi-ai": ">=0.50.0"
 	},
