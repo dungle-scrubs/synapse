@@ -25,6 +25,7 @@ export { listAvailableModels, resolveModelCandidates, resolveModelFuzzy } from "
 
 // Classifier
 export { classifyTask, findCheapestModel } from "./classifier.js";
+export type { ClassifierModel, CompleteFn, ModelLister } from "./classifier.js";
 
 // Selector
 export { selectModels } from "./selector.js";

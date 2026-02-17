@@ -2,28 +2,11 @@
  * Task classification via cheap LLM call.
  *
  * Determines a task's type (code/vision/text) and complexity (1-5)
- * using the cheapest available model from the registry. Uses pi-ai's
- * `completeSimple` for in-process inference — no CLI subprocess.
+ * using the cheapest available model. All pi-ai dependencies are injected
+ * to keep this module testable without platform-specific module resolution.
  */
 
-import { getModel, getModels, getProviders } from "@mariozechner/pi-ai";
 import type { ClassificationResult, TaskComplexity, TaskType } from "./types.js";
-
-/**
- * Lazy-loaded completeSimple to avoid static import of pi-ai's stream module.
- *
- * pi-ai re-exports completeSimple from stream.js, which has side-effect
- * imports loading all provider SDKs. These fail to resolve in some
- * environments (e.g. Linux CI without native deps). Lazy loading defers
- * resolution to call time, when the consumer has the real pi-ai available.
- */
-async function lazyCompleteSimple(
-	model: unknown,
-	context: unknown
-): Promise<{ content: Array<{ type: string; text?: string }> }> {
-	const { completeSimple } = await import("@mariozechner/pi-ai");
-	return completeSimple(model as never, context as never);
-}
 
 /** Valid task types for validation. */
 const VALID_TYPES: ReadonlySet<string> = new Set<TaskType>(["code", "vision", "text"]);
@@ -31,28 +14,36 @@ const VALID_TYPES: ReadonlySet<string> = new Set<TaskType>(["code", "vision", "t
 /** Valid complexity values for validation. */
 const VALID_COMPLEXITIES: ReadonlySet<number> = new Set<TaskComplexity>([1, 2, 3, 4, 5]);
 
-/** Cheapest model info with the data needed to call completeSimple. */
-interface CheapestModelInfo {
+/** Minimal model info needed for classification. */
+export interface ClassifierModel {
 	provider: string;
 	id: string;
+	cost: { input: number; output: number };
 }
+
+/** Function that lists all available models. */
+export type ModelLister = () => ClassifierModel[];
+
+/** Function that completes a prompt and returns text. */
+export type CompleteFn = (provider: string, modelId: string, prompt: string) => Promise<string>;
 
 /**
  * Finds the cheapest available model by effective cost.
  *
- * @returns Provider and ID of the cheapest model, or undefined if no models available
+ * @param listModels - Function that returns all available models
+ * @returns Provider and ID of the cheapest model, or undefined if none available
  */
-export function findCheapestModel(): CheapestModelInfo | undefined {
-	let cheapest: CheapestModelInfo | undefined;
+export function findCheapestModel(
+	listModels: ModelLister
+): { provider: string; id: string } | undefined {
+	let cheapest: { provider: string; id: string } | undefined;
 	let cheapestCost = Number.POSITIVE_INFINITY;
 
-	for (const provider of getProviders()) {
-		for (const m of getModels(provider)) {
-			const effective = (m.cost.input + m.cost.output) / 2;
-			if (effective < cheapestCost) {
-				cheapestCost = effective;
-				cheapest = { provider: m.provider, id: m.id };
-			}
+	for (const m of listModels()) {
+		const effective = (m.cost.input + m.cost.output) / 2;
+		if (effective < cheapestCost) {
+			cheapestCost = effective;
+			cheapest = { provider: m.provider, id: m.id };
 		}
 	}
 
@@ -98,14 +89,12 @@ Respond with JSON only: {"type": "<type>", "complexity": <1-5>, "reasoning": "<o
  * @returns Parsed object, or undefined on failure
  */
 function extractJson(raw: string): Record<string, unknown> | undefined {
-	// Strip markdown code fences if present
 	const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
 	const jsonStr = fenceMatch ? fenceMatch[1] : raw;
 
 	try {
 		return JSON.parse(jsonStr.trim());
 	} catch {
-		// Try to find a JSON object anywhere in the string
 		const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
 		if (objectMatch) {
 			try {
@@ -119,33 +108,18 @@ function extractJson(raw: string): Record<string, unknown> | undefined {
 }
 
 /**
- * Extracts text content from an AssistantMessage's content array.
- *
- * @param content - Array of content blocks from pi-ai response
- * @returns Concatenated text content
- */
-function extractText(content: Array<{ type: string; text?: string }>): string {
-	return content
-		.filter((c) => c.type === "text" && c.text)
-		.map((c) => c.text as string)
-		.join("");
-}
-
-/**
  * Classify a task's type and complexity using the cheapest available LLM.
- *
- * Picks the cheapest model from the registry by (input + output) / 2 cost,
- * sends a structured classification prompt via `completeSimple`, and parses
- * the JSON response. Falls back to primaryType + complexity 3 on any failure.
  *
  * @param task - The task description to classify
  * @param primaryType - Agent's default type (used when ambiguous or on failure)
+ * @param deps - Injected dependencies: listModels and complete functions
  * @param agentRole - Optional agent role for additional context
  * @returns Classification result with type, complexity, and reasoning
  */
 export async function classifyTask(
 	task: string,
 	primaryType: TaskType,
+	deps: { listModels: ModelLister; complete: CompleteFn },
 	agentRole?: string
 ): Promise<ClassificationResult> {
 	const fallback: ClassificationResult = {
@@ -154,20 +128,13 @@ export async function classifyTask(
 		reasoning: "fallback: classification unavailable",
 	};
 
-	const cheapest = findCheapestModel();
+	const cheapest = findCheapestModel(deps.listModels);
 	if (!cheapest) return fallback;
 
 	const prompt = buildPrompt(task, primaryType, agentRole);
 
 	try {
-		const model = getModel(cheapest.provider as never, cheapest.id as never);
-		const response = await lazyCompleteSimple(model, {
-			messages: [
-				{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() },
-			],
-		});
-
-		const output = extractText(response.content as Array<{ type: string; text?: string }>);
+		const output = await deps.complete(cheapest.provider, cheapest.id, prompt);
 		const parsed = extractJson(output);
 		if (!parsed) return fallback;
 
