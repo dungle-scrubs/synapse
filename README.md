@@ -6,7 +6,7 @@ algorithm for [pi-ai](https://github.com/nicobrinkkemper/pi-ai) models.
 ## Install
 
 ```bash
-npm install synapse
+npm install @dungle-scrubs/synapse
 ```
 
 Requires `@mariozechner/pi-ai` as a peer dependency.

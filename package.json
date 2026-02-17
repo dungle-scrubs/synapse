@@ -1,5 +1,5 @@
 {
-	"name": "synapse",
+	"name": "@dungle-scrubs/synapse",
 	"version": "0.1.0",
 	"description": "Model capability matrix, fuzzy resolver, task classifier, and selection algorithm for pi-ai models",
 	"type": "module",
