@@ -29,3 +29,4 @@ export type { ClassifierModel, CompleteFn, ModelLister } from "./classifier.js";
 
 // Selector
 export { selectModels } from "./selector.js";
+export type { SelectionOptions } from "./selector.js";
