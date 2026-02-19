@@ -48,23 +48,65 @@ function capabilityScore(id: string): number {
 }
 
 /**
- * Picks the best candidate from a list of fuzzy-match ties.
+ * Returns the priority index for a provider in the preferred list.
+ * Lower = higher priority. Providers not in the list get Infinity.
+ *
+ * @param provider - Provider name
+ * @param preferred - Ordered list of preferred providers
+ * @returns Priority index (lower is better)
+ */
+function providerPriority(provider: string, preferred: string[]): number {
+	const idx = preferred.indexOf(provider);
+	return idx === -1 ? Number.POSITIVE_INFINITY : idx;
+}
+
+/**
+ * Picks the best model ID from a list, ignoring provider.
  *
  * Tiebreak order:
- * 1. Highest capability score (from model matrix) — picks the most capable model
+ * 1. Highest capability score (from model matrix)
  * 2. Shortest model ID — prefers concise canonical names over variants
  * 3. Lexicographically last — higher version numbers win ("5.3" > "5.2")
  *
  * @param models - Array of candidates to pick from
  * @returns The best candidate by capability-then-shortest-then-latest
  */
-function pickBest(models: CandidateModel[]): CandidateModel {
+function pickBestModel(models: CandidateModel[]): CandidateModel {
 	return models.reduce((a, b) => {
 		const aCap = capabilityScore(a.id);
 		const bCap = capabilityScore(b.id);
 		if (aCap !== bCap) return aCap > bCap ? a : b;
 		if (a.id.length !== b.id.length) return a.id.length < b.id.length ? a : b;
 		return a.id >= b.id ? a : b;
+	});
+}
+
+/**
+ * Two-phase best-candidate selection:
+ * 1. Identify the best MODEL (by capability → shortest ID → lexicographic)
+ * 2. Among providers offering that model, pick by provider preference
+ *
+ * This ensures fuzzy resolution picks the right model first, then chooses
+ * the cheapest delivery path (subscription > API key > aggregator).
+ *
+ * @param models - Array of candidates to pick from
+ * @param preferredProviders - Optional ordered provider preference list
+ * @returns The best candidate: best model first, then best provider
+ */
+function pickBest(models: CandidateModel[], preferredProviders?: string[]): CandidateModel {
+	const bestModel = pickBestModel(models);
+
+	if (!preferredProviders || preferredProviders.length === 0) return bestModel;
+
+	// Filter to all providers offering the winning model ID
+	const sameModel = models.filter((m) => m.id === bestModel.id);
+	if (sameModel.length <= 1) return bestModel;
+
+	// Pick by provider preference
+	return sameModel.reduce((a, b) => {
+		const aPrio = providerPriority(a.provider, preferredProviders);
+		const bPrio = providerPriority(b.provider, preferredProviders);
+		return aPrio <= bPrio ? a : b;
 	});
 }
 
@@ -193,19 +235,22 @@ function findCandidates(query: string, modelSource?: ModelSource): CandidateMode
  * Resolves a human-friendly model name to a single exact provider/model-id.
  *
  * Finds all tied candidates via the resolution cascade, then picks the
- * best one using capability score → shortest ID → lexicographic ordering.
+ * best model (capability → shortest ID → lexicographic), and finally
+ * selects the preferred provider among those offering that model.
  *
  * @param query - Human-friendly model name (e.g. "opus", "sonnet 4.5", "claude-opus-4-5")
  * @param modelSource - Optional model-fetching function (defaults to pi-ai registry)
+ * @param preferredProviders - Optional ordered provider preference (e.g. subscription first, then API key, then aggregator). Earlier entries have higher priority.
  * @returns Resolved model, or undefined if no match found
  */
 export function resolveModelFuzzy(
 	query: string,
-	modelSource?: ModelSource
+	modelSource?: ModelSource,
+	preferredProviders?: string[]
 ): ResolvedModel | undefined {
 	const candidates = findCandidates(query, modelSource);
 	if (candidates.length === 0) return undefined;
-	return toResolved(pickBest(candidates));
+	return toResolved(pickBest(candidates, preferredProviders));
 }
 
 /**

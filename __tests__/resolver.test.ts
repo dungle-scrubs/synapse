@@ -82,6 +82,69 @@ describe("resolveModelFuzzy", () => {
 	});
 });
 
+describe("resolveModelFuzzy — preferredProviders", () => {
+	const multiProviderModels: ReturnType<ModelSource> = [
+		{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "anthropic" },
+		{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "openrouter" },
+		{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "anthropic-sub" },
+		{ id: "claude-sonnet-4-5-20250514", name: "Claude Sonnet 4.5", provider: "anthropic" },
+		{ id: "claude-sonnet-4-5-20250514", name: "Claude Sonnet 4.5", provider: "openrouter" },
+	];
+	const mpSource: ModelSource = () => multiProviderModels;
+
+	it("prefers subscription provider over API key and aggregator", () => {
+		const result = resolveModelFuzzy("sonnet", mpSource, [
+			"anthropic-sub",
+			"anthropic",
+			"openrouter",
+		]);
+		expect(result).toBeDefined();
+		expect(result?.id).toBe("claude-sonnet-4-6-20250514");
+		expect(result?.provider).toBe("anthropic-sub");
+	});
+
+	it("prefers API key over aggregator when no subscription available", () => {
+		const noSubModels: ReturnType<ModelSource> = [
+			{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "anthropic" },
+			{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "openrouter" },
+		];
+		const result = resolveModelFuzzy("sonnet", () => noSubModels, [
+			"anthropic-sub",
+			"anthropic",
+			"openrouter",
+		]);
+		expect(result).toBeDefined();
+		expect(result?.provider).toBe("anthropic");
+	});
+
+	it("falls back gracefully when no preferred provider matches", () => {
+		const result = resolveModelFuzzy("sonnet", mpSource, ["some-other-provider"]);
+		expect(result).toBeDefined();
+		// All providers tie on preference (all Infinity), falls through to ID length / lexicographic
+		expect(result?.id).toBe("claude-sonnet-4-6-20250514");
+	});
+
+	it("does not override capability score — higher capability still wins", () => {
+		// sonnet-4-6 has higher capability than sonnet-4-5
+		// Even if sonnet-4-5's provider is preferred first, capability wins
+		const result = resolveModelFuzzy("sonnet", mpSource, [
+			"openrouter", // openrouter has both 4-5 and 4-6
+			"anthropic-sub",
+			"anthropic",
+		]);
+		expect(result).toBeDefined();
+		// 4-6 should still win (higher capability), from openrouter since that's preferred
+		expect(result?.id).toBe("claude-sonnet-4-6-20250514");
+		expect(result?.provider).toBe("openrouter");
+	});
+
+	it("no-op when preferredProviders is empty", () => {
+		const withPref = resolveModelFuzzy("sonnet", mpSource, []);
+		const withoutPref = resolveModelFuzzy("sonnet", mpSource);
+		expect(withPref?.id).toBe(withoutPref?.id);
+	});
+});
+
 describe("listAvailableModels", () => {
 	it("lists all models from all providers", () => {
 		const models = listAvailableModels(source);
