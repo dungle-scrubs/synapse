@@ -24,6 +24,7 @@ export const MODEL_MATRIX: Record<string, ModelRatings> = {
 	"claude-opus-4-6": { code: 5, vision: 3, text: 5 },
 	"claude-opus-4-5": { code: 5, vision: 3, text: 5 },
 	"claude-opus-4-1": { code: 4, vision: 3, text: 4 },
+	"claude-sonnet-4-6": { code: 5, vision: 3, text: 5 },
 	"claude-sonnet-4-5": { code: 4, vision: 3, text: 4 },
 	"claude-haiku-4-5": { code: 3, vision: 2, text: 3 },
 	// OpenAI

@@ -101,6 +101,24 @@ function candidatesFromPool(pool: ResolvedModel[]): ScoredCandidate[] {
 	return candidates;
 }
 
+/** Options for model selection. */
+export interface SelectionOptions {
+	/** Pre-resolved model pool for scoped routing. */
+	pool?: ResolvedModel[];
+	/**
+	 * Providers to prefer when models tie on cost/rating.
+	 *
+	 * When two candidates have equal sort priority (same cost in eco/premium,
+	 * same rating+cost in balanced), candidates whose provider appears in this
+	 * list sort first. Earlier entries have higher priority.
+	 *
+	 * Typical use: pass subscription-backed providers (e.g. "openai-codex",
+	 * "github-copilot") so they're preferred over pay-per-token API providers
+	 * at equal capability.
+	 */
+	preferredProviders?: string[];
+}
+
 /**
  * Selects models for a classified task, ranked by preference.
  *
@@ -109,23 +127,28 @@ function candidatesFromPool(pool: ResolvedModel[]): ScoredCandidate[] {
  * 2. Filter: model has rating for classification.type
  * 3. Filter: rating[type] >= classification.complexity
  * 4. Sort by cost preference:
- *    - "eco": ascending by effective cost
- *    - "premium": descending by effective cost
- *    - "balanced": exact rating match first, then ascending cost
+ *    - "eco": ascending by effective cost, then preferred providers
+ *    - "premium": descending by effective cost, then preferred providers
+ *    - "balanced": exact rating match first, then ascending cost, then preferred providers
  * 5. Return ranked list (caller uses first, falls back to rest)
  *
  * @param classification - Task classification result
  * @param costPreference - Cost preference for sorting
- * @param pool - Optional pre-resolved model pool (for scoped routing)
+ * @param poolOrOptions - Pre-resolved model pool OR selection options object
  * @returns Ranked list of suitable models (may be empty)
  */
 export function selectModels(
 	classification: ClassificationResult,
 	costPreference: CostPreference,
-	pool?: ResolvedModel[]
+	poolOrOptions?: ResolvedModel[] | SelectionOptions
 ): ResolvedModel[] {
+	// Normalize legacy pool array to options object
+	const options: SelectionOptions = Array.isArray(poolOrOptions)
+		? { pool: poolOrOptions }
+		: (poolOrOptions ?? {});
+
 	const { type, complexity } = classification;
-	const allCandidates = pool ? candidatesFromPool(pool) : enumerateCandidates();
+	const allCandidates = options.pool ? candidatesFromPool(options.pool) : enumerateCandidates();
 	const candidates = allCandidates.filter((c) => {
 		const rating = c.ratings[type];
 		return rating !== undefined && rating >= complexity;
@@ -133,18 +156,35 @@ export function selectModels(
 
 	if (candidates.length === 0) return [];
 
+	// Build provider preference lookup: provider → priority (lower = better).
+	// Providers not in the list get Infinity (sorted last in tiebreaks).
+	const prefMap = new Map<string, number>();
+	if (options.preferredProviders) {
+		for (let i = 0; i < options.preferredProviders.length; i++) {
+			prefMap.set(options.preferredProviders[i], i);
+		}
+	}
+	const providerPriority = (provider: string): number =>
+		prefMap.get(provider) ?? Number.POSITIVE_INFINITY;
+
 	candidates.sort((a, b) => {
 		if (costPreference === "eco") {
-			return a.effectiveCost - b.effectiveCost;
+			const costDiff = a.effectiveCost - b.effectiveCost;
+			if (costDiff !== 0) return costDiff;
+			return providerPriority(a.resolved.provider) - providerPriority(b.resolved.provider);
 		}
 		if (costPreference === "premium") {
-			return b.effectiveCost - a.effectiveCost;
+			const costDiff = b.effectiveCost - a.effectiveCost;
+			if (costDiff !== 0) return costDiff;
+			return providerPriority(a.resolved.provider) - providerPriority(b.resolved.provider);
 		}
-		// "balanced": exact-match rating sorts first, then ascending cost
+		// "balanced": exact-match rating sorts first, then ascending cost, then provider pref
 		const aExact = a.ratings[type] === complexity ? 0 : 1;
 		const bExact = b.ratings[type] === complexity ? 0 : 1;
 		if (aExact !== bExact) return aExact - bExact;
-		return a.effectiveCost - b.effectiveCost;
+		const costDiff = a.effectiveCost - b.effectiveCost;
+		if (costDiff !== 0) return costDiff;
+		return providerPriority(a.resolved.provider) - providerPriority(b.resolved.provider);
 	});
 
 	return candidates.map((c) => c.resolved);
