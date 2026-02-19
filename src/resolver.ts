@@ -61,21 +61,37 @@ function providerPriority(provider: string, preferred: string[]): number {
 }
 
 /**
+ * Compares model IDs using numeric-aware ordering.
+ *
+ * This treats numeric segments as numbers so "5.10" sorts after "5.2".
+ *
+ * @param a - First model ID
+ * @param b - Second model ID
+ * @returns Positive when a is higher/newer than b, negative when lower, 0 if equivalent
+ */
+function compareModelIds(a: string, b: string): number {
+	return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/**
  * Picks the best model ID from a list, ignoring provider.
  *
  * Tiebreak order:
  * 1. Highest capability score (from model matrix)
- * 2. Shortest model ID — prefers concise canonical names over variants
- * 3. Lexicographically last — higher version numbers win ("5.3" > "5.2")
+ * 2. Higher numeric-aware model ID — prefers newer versions ("5.10" > "5.2")
+ * 3. Shortest model ID when numeric ordering ties
+ * 4. Lexicographically last as final deterministic fallback
  *
  * @param models - Array of candidates to pick from
- * @returns The best candidate by capability-then-shortest-then-latest
+ * @returns The best candidate by capability-then-version-then-length
  */
 function pickBestModel(models: CandidateModel[]): CandidateModel {
 	return models.reduce((a, b) => {
 		const aCap = capabilityScore(a.id);
 		const bCap = capabilityScore(b.id);
 		if (aCap !== bCap) return aCap > bCap ? a : b;
+		const versionDiff = compareModelIds(a.id, b.id);
+		if (versionDiff !== 0) return versionDiff > 0 ? a : b;
 		if (a.id.length !== b.id.length) return a.id.length < b.id.length ? a : b;
 		return a.id >= b.id ? a : b;
 	});
@@ -83,7 +99,7 @@ function pickBestModel(models: CandidateModel[]): CandidateModel {
 
 /**
  * Two-phase best-candidate selection:
- * 1. Identify the best MODEL (by capability → shortest ID → lexicographic)
+ * 1. Identify the best MODEL (by capability → numeric-aware ID → shortest ID)
  * 2. Among providers offering that model, pick by provider preference
  *
  * This ensures fuzzy resolution picks the right model first, then chooses
@@ -235,7 +251,7 @@ function findCandidates(query: string, modelSource?: ModelSource): CandidateMode
  * Resolves a human-friendly model name to a single exact provider/model-id.
  *
  * Finds all tied candidates via the resolution cascade, then picks the
- * best model (capability → shortest ID → lexicographic), and finally
+ * best model (capability → numeric-aware ID → shortest ID), and finally
  * selects the preferred provider among those offering that model.
  *
  * @param query - Human-friendly model name (e.g. "opus", "sonnet 4.5", "claude-opus-4-5")
