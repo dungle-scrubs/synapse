@@ -71,6 +71,16 @@ describe("resolveModelFuzzy", () => {
 		expect(result?.id).toBe("gpt-5.2");
 	});
 
+	it("tier 4: numeric-aware ID tiebreak prefers 5.10 over 5.2", () => {
+		const versionModels: ReturnType<ModelSource> = [
+			{ id: "model-5.2-pro", name: "Model 5.2 Pro", provider: "vendor" },
+			{ id: "model-5.10-pro", name: "Model 5.10 Pro", provider: "vendor" },
+		];
+		const result = resolveModelFuzzy("model", () => versionModels);
+		expect(result).toBeDefined();
+		expect(result?.id).toBe("model-5.10-pro");
+	});
+
 	it("tier 5: substring match", () => {
 		const result = resolveModelFuzzy("gemini", source);
 		expect(result).toBeDefined();
@@ -120,7 +130,7 @@ describe("resolveModelFuzzy — preferredProviders", () => {
 	it("falls back gracefully when no preferred provider matches", () => {
 		const result = resolveModelFuzzy("sonnet", mpSource, ["some-other-provider"]);
 		expect(result).toBeDefined();
-		// All providers tie on preference (all Infinity), falls through to ID length / lexicographic
+		// All providers tie on preference (all Infinity), falls through to model-ID tiebreaks
 		expect(result?.id).toBe("claude-sonnet-4-6-20250514");
 	});
 

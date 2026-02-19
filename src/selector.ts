@@ -7,14 +7,7 @@
 
 import { getModels, getProviders } from "@mariozechner/pi-ai";
 import { getModelRatings } from "./matrix.js";
-import type {
-	CandidateModel,
-	ClassificationResult,
-	CostPreference,
-	ModelRatings,
-	ModelSource,
-	ResolvedModel,
-} from "./types.js";
+import type { ClassificationResult, CostPreference, ModelRatings, ResolvedModel } from "./types.js";
 
 /** Model candidate with resolved identity and cost. */
 interface ScoredCandidate {
@@ -24,49 +17,39 @@ interface ScoredCandidate {
 }
 
 /**
- * Collects all models from every registered provider.
+ * Builds a lookup of effective costs keyed by "provider/id".
  *
- * @returns Flat array of candidate models
+ * @returns Map of model key to effective cost
  */
-function getAllModels(): CandidateModel[] {
-	const result: CandidateModel[] = [];
+function buildCostIndex(): Map<string, number> {
+	const index = new Map<string, number>();
 	for (const provider of getProviders()) {
-		for (const m of getModels(provider)) {
-			result.push({ provider: m.provider, id: m.id, name: m.name });
+		for (const model of getModels(provider)) {
+			index.set(`${model.provider}/${model.id}`, (model.cost.input + model.cost.output) / 2);
 		}
 	}
-	return result;
+	return index;
 }
 
 /**
  * Enumerates all models from the registry with their ratings and costs.
  *
- * @param modelSource - Optional model-fetching function (defaults to pi-ai registry)
  * @returns Array of candidates that exist in the capability matrix
  */
-function enumerateCandidates(modelSource?: ModelSource): ScoredCandidate[] {
+function enumerateCandidates(): ScoredCandidate[] {
 	const candidates: ScoredCandidate[] = [];
-	const models = modelSource ? modelSource() : getAllModels();
-
 	for (const provider of getProviders()) {
-		for (const regModel of getModels(provider)) {
-			// Only include models that are in our source list (or all if no source)
-			if (
-				modelSource &&
-				!models.some((m) => m.id === regModel.id && m.provider === regModel.provider)
-			) {
-				continue;
-			}
-			const ratings = getModelRatings(regModel.id);
+		for (const model of getModels(provider)) {
+			const ratings = getModelRatings(model.id);
 			if (!ratings) continue;
 			candidates.push({
 				resolved: {
-					provider: regModel.provider,
-					id: regModel.id,
-					displayName: `${regModel.provider}/${regModel.id}`,
+					provider: model.provider,
+					id: model.id,
+					displayName: `${model.provider}/${model.id}`,
 				},
 				ratings,
-				effectiveCost: (regModel.cost.input + regModel.cost.output) / 2,
+				effectiveCost: (model.cost.input + model.cost.output) / 2,
 			});
 		}
 	}
@@ -80,22 +63,16 @@ function enumerateCandidates(modelSource?: ModelSource): ScoredCandidate[] {
  * with ratings and cost data so they can be filtered/sorted by selectModels.
  *
  * @param pool - Pre-resolved models to convert
- * @returns Scored candidates (only those with matrix ratings)
+ * @returns Scored candidates (only those with matrix ratings and registry costs)
  */
 function candidatesFromPool(pool: ResolvedModel[]): ScoredCandidate[] {
 	const candidates: ScoredCandidate[] = [];
+	const costIndex = buildCostIndex();
 	for (const resolved of pool) {
 		const ratings = getModelRatings(resolved.id);
 		if (!ratings) continue;
-		// Look up cost from registry
-		let effectiveCost = 0;
-		for (const provider of getProviders()) {
-			for (const model of getModels(provider)) {
-				if (model.id === resolved.id && model.provider === resolved.provider) {
-					effectiveCost = (model.cost.input + model.cost.output) / 2;
-				}
-			}
-		}
+		const effectiveCost = costIndex.get(`${resolved.provider}/${resolved.id}`);
+		if (effectiveCost === undefined) continue;
 		candidates.push({ resolved, ratings, effectiveCost });
 	}
 	return candidates;

@@ -14,19 +14,19 @@ Requires `@mariozechner/pi-ai` as a peer dependency.
 ## Usage
 
 ```typescript
-import {
-  classifyTask,
-  resolveModelFuzzy,
-  selectModels,
-  MODEL_MATRIX,
-} from "synapse";
+import { classifyTask, resolveModelFuzzy, selectModels } from "@dungle-scrubs/synapse";
 
 // Fuzzy resolve a human-friendly model name
 const model = resolveModelFuzzy("opus");
 // → { provider: "anthropic", id: "claude-opus-4-6", displayName: "anthropic/claude-opus-4-6" }
 
-// Classify a task's type and complexity
-const classification = await classifyTask("Refactor the auth module", "code");
+// classifyTask requires injected deps:
+// - listModels(): { provider, id, cost: { input, output } }[]
+// - complete(provider, modelId, prompt): Promise<string>
+const classification = await classifyTask("Refactor the auth module", "code", {
+  listModels,
+  complete,
+});
 // → { type: "code", complexity: 3, reasoning: "..." }
 
 // Select ranked models for the task
@@ -50,8 +50,8 @@ const ranked = selectModels(classification, "balanced");
 
 ### Classifier
 
-- `classifyTask(task, primaryType, agentRole?)` — Classify task type and complexity
-- `findCheapestModel()` — Find the cheapest available model
+- `classifyTask(task, primaryType, deps, agentRole?)` — Classify task type and complexity
+- `findCheapestModel(listModels)` — Find the cheapest available model
 
 ### Selector
 

@@ -126,6 +126,12 @@ describe("selectModels", () => {
 		expect(ranked.length).toBe(1);
 		expect(ranked[0].id).toBe("claude-opus-4-6");
 	});
+
+	it("skips pooled models missing registry cost metadata", () => {
+		const pool = [{ provider: "unknown", id: "gpt-5.1", displayName: "unknown/gpt-5.1" }];
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", pool);
+		expect(ranked).toEqual([]);
+	});
 });
 
 describe("selectModels — preferredProviders", () => {
