@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { MODEL_MATRIX, getModelRatings, modelSupportsTask } from "../src/matrix.js";
+import {
+	MODEL_MATRIX,
+	createModelMatrixOverrideTemplate,
+	getModelRatings,
+	modelSupportsTask,
+	parseModelMatrixOverrides,
+} from "../src/matrix.js";
 
 describe("getModelRatings", () => {
 	it("returns exact match for known model", () => {
@@ -37,6 +43,95 @@ describe("getModelRatings", () => {
 		const ratings = getModelRatings("gemini-2.5-flash");
 		expect(ratings).toEqual({ vision: 4, text: 4 });
 		expect(ratings?.code).toBeUndefined();
+	});
+});
+
+describe("matrix overrides", () => {
+	it("overrides base ratings when matrixOverrides provides a matching prefix", () => {
+		const ratings = getModelRatings("claude-sonnet-4-5-20250929", {
+			matrixOverrides: {
+				"claude-sonnet-4-5": { code: 2, text: 2, vision: 2 },
+			},
+		});
+		expect(ratings).toEqual({ code: 2, text: 2, vision: 2 });
+	});
+
+	it("adds entirely new model prefixes via matrixOverrides", () => {
+		const ratings = getModelRatings("my-custom-model-v2", {
+			matrixOverrides: {
+				"my-custom-model": { code: 4, text: 5 },
+			},
+		});
+		expect(ratings).toEqual({ code: 4, text: 5 });
+	});
+
+	it("removes base entries when override value is null", () => {
+		const ratings = getModelRatings("claude-opus-4-6", {
+			matrixOverrides: {
+				"claude-opus-4-6": null,
+			},
+		});
+		expect(ratings).toBeUndefined();
+	});
+
+	it("applies overrides in modelSupportsTask", () => {
+		expect(
+			modelSupportsTask("claude-sonnet-4-5", "code", 4, {
+				matrixOverrides: {
+					"claude-sonnet-4-5": { code: 2 },
+				},
+			})
+		).toBe(false);
+	});
+});
+
+describe("parseModelMatrixOverrides", () => {
+	it("accepts direct override maps", () => {
+		const parsed = parseModelMatrixOverrides({
+			"claude-opus-4-6": { code: 3, text: 4, vision: 2 },
+		});
+		expect(parsed).toEqual({
+			"claude-opus-4-6": { code: 3, text: 4, vision: 2 },
+		});
+	});
+
+	it("accepts wrapped template files with matrixOverrides", () => {
+		const parsed = parseModelMatrixOverrides({
+			matrixOverrides: {
+				"gemini-3-pro": { code: 5, text: 4, vision: 5 },
+			},
+		});
+		expect(parsed).toEqual({
+			"gemini-3-pro": { code: 5, text: 4, vision: 5 },
+		});
+	});
+
+	it("drops invalid entries and keeps valid ones", () => {
+		const parsed = parseModelMatrixOverrides({
+			"bad-shape": "nope",
+			"bad-rating": { code: 9 },
+			"good-model": { code: 4, text: 2 },
+		});
+		expect(parsed).toEqual({
+			"good-model": { code: 4, text: 2 },
+		});
+	});
+
+	it("returns undefined when wrapped payload has invalid matrixOverrides root", () => {
+		const parsed = parseModelMatrixOverrides({ matrixOverrides: "invalid" });
+		expect(parsed).toBeUndefined();
+	});
+});
+
+describe("createModelMatrixOverrideTemplate", () => {
+	it("includes current matrix by default", () => {
+		const template = createModelMatrixOverrideTemplate();
+		expect(template.matrixOverrides["claude-opus-4-6"]).toEqual({ code: 5, vision: 3, text: 5 });
+	});
+
+	it("supports empty template generation", () => {
+		const template = createModelMatrixOverrideTemplate({ includeCurrentMatrix: false });
+		expect(template).toEqual({ matrixOverrides: {} });
 	});
 });
 

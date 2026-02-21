@@ -65,6 +65,21 @@ describe("resolveModelFuzzy", () => {
 		expect(result?.id).toContain("sonnet");
 	});
 
+	it("supports matrixOverrides for capability-based tiebreaking", () => {
+		const sonnetModels: ReturnType<ModelSource> = [
+			{ id: "claude-sonnet-4-5-20250514", name: "Claude Sonnet 4.5", provider: "anthropic" },
+			{ id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", provider: "anthropic" },
+		];
+		const result = resolveModelFuzzy("sonnet", () => sonnetModels, undefined, {
+			matrixOverrides: {
+				"claude-sonnet-4-5": { code: 5, text: 5, vision: 5 },
+				"claude-sonnet-4-6": { code: 1, text: 1, vision: 1 },
+			},
+		});
+		expect(result).toBeDefined();
+		expect(result?.id).toBe("claude-sonnet-4-5-20250514");
+	});
+
 	it("tier 4: tiebreak prefers shorter ID", () => {
 		const result = resolveModelFuzzy("gpt 5.2", source);
 		expect(result).toBeDefined();
