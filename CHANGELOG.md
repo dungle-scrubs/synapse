@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.3...synapse-v0.1.4) (2026-02-21)
+
+
+### Added
+
+* add matrix overrides CLI and mode-aware routing ([a6e465d](https://github.com/dungle-scrubs/synapse/commit/a6e465ddc4d465fee094eca45e94e41fb2653f0a))
+* **matrix:** add override APIs and init-overrides CLI ([dec06d3](https://github.com/dungle-scrubs/synapse/commit/dec06d3259a906386869bf6c792dfd67d33b90d5))
+* **selector:** add routing modes with telemetry scoring ([06478c3](https://github.com/dungle-scrubs/synapse/commit/06478c3fa6efe659843053dbd535b4f9163a2345))
+
+
+### Fixed
+
+* apply review follow-ups ([7bceb61](https://github.com/dungle-scrubs/synapse/commit/7bceb61eb2ee8c6073d5c76d99f38a73aa976877))
+* **resolver:** compare model versions numerically ([31b30d4](https://github.com/dungle-scrubs/synapse/commit/31b30d434382d0e04b12f4a55526e6b35c0e6c24))
+* **selector:** ignore pooled models without cost ([7431925](https://github.com/dungle-scrubs/synapse/commit/7431925635ead553a9e4698d9bc4f5ec5b0d3bc4))
+
+
+### Documentation
+
+* **readme:** fix usage imports and signatures ([5f96e97](https://github.com/dungle-scrubs/synapse/commit/5f96e97651a40cec4fddd70286b7a3d1115803ae))
+
 ## [0.1.3](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.2...synapse-v0.1.3) (2026-02-19)
 
 
