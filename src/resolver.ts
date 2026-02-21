@@ -6,8 +6,8 @@
  */
 
 import { getModels, getProviders } from "@mariozechner/pi-ai";
-import { getModelRatings } from "./matrix.js";
-import type { CandidateModel, ModelSource, ResolvedModel } from "./types.js";
+import { type ModelRatingsLookupOptions, createModelRatingsLookup } from "./matrix.js";
+import type { CandidateModel, ModelRatings, ModelSource, ResolvedModel } from "./types.js";
 
 /**
  * Collects all models from every registered provider.
@@ -39,10 +39,14 @@ function toResolved(m: CandidateModel): ResolvedModel {
  * Higher = more capable. Returns 0 if not in matrix.
  *
  * @param id - Model ID
+ * @param getRatings - Ratings lookup function
  * @returns Total capability score
  */
-function capabilityScore(id: string): number {
-	const ratings = getModelRatings(id);
+function capabilityScore(
+	id: string,
+	getRatings: (modelId: string) => ModelRatings | undefined
+): number {
+	const ratings = getRatings(id);
 	if (!ratings) return 0;
 	return Object.values(ratings).reduce((sum, v) => sum + (v ?? 0), 0);
 }
@@ -83,12 +87,16 @@ function compareModelIds(a: string, b: string): number {
  * 4. Lexicographically last as final deterministic fallback
  *
  * @param models - Array of candidates to pick from
+ * @param getRatings - Ratings lookup function
  * @returns The best candidate by capability-then-version-then-length
  */
-function pickBestModel(models: CandidateModel[]): CandidateModel {
+function pickBestModel(
+	models: CandidateModel[],
+	getRatings: (modelId: string) => ModelRatings | undefined
+): CandidateModel {
 	return models.reduce((a, b) => {
-		const aCap = capabilityScore(a.id);
-		const bCap = capabilityScore(b.id);
+		const aCap = capabilityScore(a.id, getRatings);
+		const bCap = capabilityScore(b.id, getRatings);
 		if (aCap !== bCap) return aCap > bCap ? a : b;
 		const versionDiff = compareModelIds(a.id, b.id);
 		if (versionDiff !== 0) return versionDiff > 0 ? a : b;
@@ -106,11 +114,16 @@ function pickBestModel(models: CandidateModel[]): CandidateModel {
  * the cheapest delivery path (subscription > API key > aggregator).
  *
  * @param models - Array of candidates to pick from
+ * @param getRatings - Ratings lookup function
  * @param preferredProviders - Optional ordered provider preference list
  * @returns The best candidate: best model first, then best provider
  */
-function pickBest(models: CandidateModel[], preferredProviders?: string[]): CandidateModel {
-	const bestModel = pickBestModel(models);
+function pickBest(
+	models: CandidateModel[],
+	getRatings: (modelId: string) => ModelRatings | undefined,
+	preferredProviders?: string[]
+): CandidateModel {
+	const bestModel = pickBestModel(models, getRatings);
 
 	if (!preferredProviders || preferredProviders.length === 0) return bestModel;
 
@@ -257,16 +270,19 @@ function findCandidates(query: string, modelSource?: ModelSource): CandidateMode
  * @param query - Human-friendly model name (e.g. "opus", "sonnet 4.5", "claude-opus-4-5")
  * @param modelSource - Optional model-fetching function (defaults to pi-ai registry)
  * @param preferredProviders - Optional ordered provider preference (e.g. subscription first, then API key, then aggregator). Earlier entries have higher priority.
+ * @param options - Optional lookup options including matrix overrides
  * @returns Resolved model, or undefined if no match found
  */
 export function resolveModelFuzzy(
 	query: string,
 	modelSource?: ModelSource,
-	preferredProviders?: string[]
+	preferredProviders?: string[],
+	options?: ModelRatingsLookupOptions
 ): ResolvedModel | undefined {
 	const candidates = findCandidates(query, modelSource);
 	if (candidates.length === 0) return undefined;
-	return toResolved(pickBest(candidates, preferredProviders));
+	const getRatings = createModelRatingsLookup(options);
+	return toResolved(pickBest(candidates, getRatings, preferredProviders));
 }
 
 /**
