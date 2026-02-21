@@ -132,6 +132,18 @@ describe("selectModels", () => {
 		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", pool);
 		expect(ranked).toEqual([]);
 	});
+
+	it("respects matrixOverrides when filtering candidates", () => {
+		const withoutOverride = selectModels({ type: "code", complexity: 4, reasoning: "test" }, "eco");
+		expect(withoutOverride.map((m) => m.id)).not.toContain("claude-haiku-4-5-20250514");
+
+		const withOverride = selectModels({ type: "code", complexity: 4, reasoning: "test" }, "eco", {
+			matrixOverrides: {
+				"claude-haiku-4-5": { code: 4, text: 3, vision: 2 },
+			},
+		});
+		expect(withOverride.map((m) => m.id)).toContain("claude-haiku-4-5-20250514");
+	});
 });
 
 describe("selectModels — preferredProviders", () => {
@@ -203,5 +215,71 @@ describe("selectModels — preferredProviders", () => {
 		expect(withPref.map((m) => `${m.provider}/${m.id}`)).toEqual(
 			withoutPref.map((m) => `${m.provider}/${m.id}`)
 		);
+	});
+});
+
+describe("selectModels — routing modes", () => {
+	it("cheap mode can override premium sorting and pick cheaper models", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "premium", {
+			routingMode: "cheap",
+		});
+		expect(ranked.length).toBeGreaterThan(0);
+		expect(ranked[0].provider).toBe("github-copilot");
+		expect(ranked[0].id).toBe("gpt-5.1");
+	});
+
+	it("quality mode raises effective complexity floor", () => {
+		const ranked = selectModels({ type: "code", complexity: 4, reasoning: "test" }, "balanced", {
+			routingMode: "quality",
+		});
+		const ids = ranked.map((m) => m.id);
+		expect(ids).not.toContain("claude-sonnet-4-5-20250514");
+		expect(ids).not.toContain("claude-haiku-4-5-20250514");
+	});
+
+	it("fast mode uses latency signals for ranking", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "fast",
+			routingSignals: {
+				generatedAtMs: Date.now(),
+				routes: {
+					"anthropic/claude-opus-4-6": { latencyP90Ms: 3500, observedAtMs: Date.now() },
+					"anthropic/claude-sonnet-4-5-20250514": {
+						latencyP90Ms: 400,
+						observedAtMs: Date.now(),
+					},
+					"google/gemini-3-flash": { latencyP90Ms: 2200, observedAtMs: Date.now() },
+					"github-copilot/gpt-5.1": { latencyP90Ms: 1800, observedAtMs: Date.now() },
+					"openai-codex/gpt-5.1": { latencyP90Ms: 1700, observedAtMs: Date.now() },
+					"openai/gpt-5.1": { latencyP90Ms: 1600, observedAtMs: Date.now() },
+				},
+			},
+		});
+		expect(ranked.length).toBeGreaterThan(0);
+		expect(ranked[0].id).toBe("claude-sonnet-4-5-20250514");
+	});
+
+	it("reliable mode filters out low-uptime candidates", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "reliable",
+			routingSignals: {
+				generatedAtMs: Date.now(),
+				routes: {
+					"google/gemini-3-flash": { uptime: 0.82, observedAtMs: Date.now() },
+					"github-copilot/gpt-5.1": { uptime: 0.995, observedAtMs: Date.now() },
+				},
+			},
+		});
+		expect(ranked.map((m) => `${m.provider}/${m.id}`)).not.toContain("google/gemini-3-flash");
+	});
+
+	it("mode policy override can relax strict quality floor", () => {
+		const ranked = selectModels({ type: "code", complexity: 4, reasoning: "test" }, "balanced", {
+			routingMode: "quality",
+			routingModePolicyOverride: {
+				complexityBias: 0,
+			},
+		});
+		expect(ranked.map((m) => m.id)).toContain("claude-sonnet-4-5-20250514");
 	});
 });
