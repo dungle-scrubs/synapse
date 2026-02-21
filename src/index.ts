@@ -10,15 +10,37 @@ export type {
 	CandidateModel,
 	ClassificationResult,
 	CostPreference,
+	ModelMatrixOverrides,
 	ModelRatings,
 	ModelSource,
 	ResolvedModel,
+	RoutingMode,
+	RoutingModeConstraints,
+	RoutingModePolicy,
+	RoutingModePolicyOverride,
+	RoutingModelSignal,
+	RoutingRouteSignal,
+	RoutingScoreWeights,
+	RoutingSignalsSnapshot,
 	TaskComplexity,
 	TaskType,
 } from "./types.js";
 
 // Matrix
-export { getModelRatings, MODEL_MATRIX, modelSupportsTask } from "./matrix.js";
+export {
+	applyModelMatrixOverrides,
+	createModelMatrixOverrideTemplate,
+	createModelRatingsLookup,
+	getModelRatings,
+	MODEL_MATRIX,
+	modelSupportsTask,
+	parseModelMatrixOverrides,
+} from "./matrix.js";
+export type {
+	CreateModelMatrixOverrideTemplateOptions,
+	ModelMatrixOverrideTemplate,
+	ModelRatingsLookupOptions,
+} from "./matrix.js";
 
 // Resolver
 export { listAvailableModels, resolveModelCandidates, resolveModelFuzzy } from "./resolver.js";
