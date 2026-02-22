@@ -144,6 +144,7 @@ Pass `matrixOverrides` into synapse APIs via options.
 
 - `selectModels(classification, costPreference, options?)` — Rank models for a classified task
   - Score-based modes combine matrix tiers with raw LM Arena priors (when available)
+  - When `options.matrixOverrides` is provided, capability scoring uses matrix tiers only so overrides fully control ranking
   - `options.routingMode`: score-based mode (`cheap`, `fast`, `balanced`, `quality`, `reliable`)
   - `options.routingSignals`: telemetry snapshot for latency/reliability/throughput scoring
   - `options.routingModePolicyOverride`: partial policy override for the active mode

@@ -174,10 +174,10 @@ function normalize(s: string): string {
  * and `resolveModelCandidates` (returns all for scoped routing).
  *
  * Resolution cascade:
- * 1. Exact ID match across all providers
- * 2. Case-insensitive ID match
- * 2.5. Normalized match — strips separators ("glm5" → "glm-5")
- * 3. Provider/ID format (e.g. "anthropic/claude-sonnet-4-5")
+ * 1. Provider/ID format when query contains "/" (e.g. "anthropic/claude-opus-4-5")
+ * 2. Exact ID match across all providers
+ * 3. Case-insensitive ID match
+ * 3.5. Normalized match — strips separators ("glm5" → "glm-5")
  * 4. Token overlap — split query into tokens, score models by weighted
  *    token matches. ID/name matches score 2, provider-only matches score 1.
  *    Best score wins.
@@ -196,20 +196,7 @@ function findCandidates(query: string, modelSource?: ModelSource): CandidateMode
 	if (q.length === 0) return [];
 	const qLower = q.toLowerCase();
 
-	// 1. Exact ID match
-	const exact = models.filter((m) => m.id === q);
-	if (exact.length > 0) return exact;
-
-	// 2. Case-insensitive ID match
-	const ciMatch = models.filter((m) => m.id.toLowerCase() === qLower);
-	if (ciMatch.length > 0) return ciMatch;
-
-	// 2.5. Normalized match — strips separators ("glm5" matches "glm-5")
-	const qNorm = normalize(q);
-	const normMatch = models.filter((m) => normalize(m.id) === qNorm);
-	if (normMatch.length > 0) return normMatch;
-
-	// 3. Provider/ID format
+	// 1. Provider/ID format takes precedence when query includes "/".
 	if (q.includes("/")) {
 		const slashIdx = q.indexOf("/");
 		const provider = q.slice(0, slashIdx).toLowerCase();
@@ -219,6 +206,19 @@ function findCandidates(query: string, modelSource?: ModelSource): CandidateMode
 		);
 		if (providerMatch.length > 0) return providerMatch;
 	}
+
+	// 2. Exact ID match
+	const exact = models.filter((m) => m.id === q);
+	if (exact.length > 0) return exact;
+
+	// 3. Case-insensitive ID match
+	const ciMatch = models.filter((m) => m.id.toLowerCase() === qLower);
+	if (ciMatch.length > 0) return ciMatch;
+
+	// 3.5. Normalized match — strips separators ("glm5" matches "glm-5")
+	const qNorm = normalize(q);
+	const normMatch = models.filter((m) => normalize(m.id) === qNorm);
+	if (normMatch.length > 0) return normMatch;
 
 	// 4. Token overlap scoring (ID/name matches weighted 2×, provider-only 1×)
 	const queryTokens = tokenize(q);

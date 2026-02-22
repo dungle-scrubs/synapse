@@ -46,11 +46,32 @@ describe("resolveModelFuzzy", () => {
 		expect(result?.id).toBe("gpt-5.1-codex");
 	});
 
-	it("tier 3: provider/id format", () => {
+	it("provider/id format resolves provider-scoped queries", () => {
 		const result = resolveModelFuzzy("anthropic/claude-opus-4-5-20250514", source);
 		expect(result).toBeDefined();
 		expect(result?.id).toBe("claude-opus-4-5-20250514");
 		expect(result?.provider).toBe("anthropic");
+	});
+
+	it("provider/id format takes precedence over exact-id collisions", () => {
+		const slashCollisionModels: ReturnType<ModelSource> = [
+			{ id: "z-ai/glm-5", name: "GLM-5", provider: "openrouter" },
+			{ id: "openrouter/z-ai/glm-5", name: "GLM-5 Mirror", provider: "shadow" },
+		];
+		const result = resolveModelFuzzy("openrouter/z-ai/glm-5", () => slashCollisionModels);
+		expect(result).toBeDefined();
+		expect(result?.provider).toBe("openrouter");
+		expect(result?.id).toBe("z-ai/glm-5");
+	});
+
+	it("falls back to exact-id matching when provider/id lookup misses", () => {
+		const slashIdOnlyModels: ReturnType<ModelSource> = [
+			{ id: "zai/glm-5", name: "GLM-5", provider: "vercel-ai-gateway" },
+		];
+		const result = resolveModelFuzzy("zai/glm-5", () => slashIdOnlyModels);
+		expect(result).toBeDefined();
+		expect(result?.provider).toBe("vercel-ai-gateway");
+		expect(result?.id).toBe("zai/glm-5");
 	});
 
 	it("tier 4: token overlap — 'opus' matches Opus model", () => {
