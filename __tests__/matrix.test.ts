@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
+	MODEL_ARENA_PRIORS,
 	MODEL_MATRIX,
 	createModelMatrixOverrideTemplate,
+	getModelArenaPriors,
 	getModelRatings,
 	modelSupportsTask,
 	parseModelMatrixOverrides,
@@ -21,6 +23,11 @@ describe("getModelRatings", () => {
 	it("strips provider prefix before matching", () => {
 		const ratings = getModelRatings("anthropic/claude-opus-4-6");
 		expect(ratings).toEqual({ code: 5, vision: 3, text: 5 });
+	});
+
+	it("strips nested provider prefixes before matching", () => {
+		expect(getModelRatings("openrouter/z-ai/glm-5")).toEqual({ code: 5, text: 4 });
+		expect(getModelRatings("openrouter/minimax/minimax-m2.1")).toEqual({ code: 4, text: 3 });
 	});
 
 	it("returns undefined for unknown model", () => {
@@ -43,6 +50,20 @@ describe("getModelRatings", () => {
 		const ratings = getModelRatings("gemini-2.5-flash");
 		expect(ratings).toEqual({ vision: 4, text: 4 });
 		expect(ratings?.code).toBeUndefined();
+	});
+});
+
+describe("getModelArenaPriors", () => {
+	it("returns priors for known models", () => {
+		expect(getModelArenaPriors("gemini-3-pro")).toEqual({ code: 1444, vision: 1288, text: 1486 });
+	});
+
+	it("supports nested provider-qualified IDs", () => {
+		expect(getModelArenaPriors("openrouter/z-ai/glm-5")).toEqual({ code: 1456, text: 1452 });
+	});
+
+	it("returns undefined for unknown models", () => {
+		expect(getModelArenaPriors("unknown-model")).toBeUndefined();
 	});
 });
 
@@ -157,6 +178,16 @@ describe("modelSupportsTask", () => {
 	it("cross-modality: vision task excludes text-only models", () => {
 		expect(modelSupportsTask("glm-5", "vision", 1)).toBe(false);
 		expect(modelSupportsTask("gemini-3-pro", "vision", 5)).toBe(true);
+	});
+});
+
+describe("MODEL_ARENA_PRIORS completeness", () => {
+	it("all prior scores are positive", () => {
+		for (const [_modelId, priors] of Object.entries(MODEL_ARENA_PRIORS)) {
+			for (const [_type, score] of Object.entries(priors)) {
+				expect(score).toBeGreaterThan(0);
+			}
+		}
 	});
 });
 

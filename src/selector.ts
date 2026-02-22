@@ -6,10 +6,18 @@
  */
 
 import { getModels, getProviders } from "@mariozechner/pi-ai";
-import { createModelRatingsLookup } from "./matrix.js";
+import { createModelArenaPriorsLookup, createModelRatingsLookup } from "./matrix.js";
+import {
+	buildModelSignalKey,
+	buildProviderModelSignalKey,
+	buildRouteSignalKey,
+	sanitizeRoutingModePolicyOverride,
+	sanitizeRoutingSignalsSnapshot,
+} from "./routing-signals.js";
 import type {
 	ClassificationResult,
 	CostPreference,
+	ModelArenaScores,
 	ModelMatrixOverrides,
 	ModelRatings,
 	ResolvedModel,
@@ -24,6 +32,7 @@ import type {
 
 /** Model candidate with resolved identity and cost. */
 interface ScoredCandidate {
+	arenaScores?: ModelArenaScores;
 	effectiveCost: number;
 	ratings: ModelRatings;
 	resolved: ResolvedModel;
@@ -195,18 +204,23 @@ function buildCostIndex(): Map<string, number> {
 }
 
 /**
- * Enumerate all models from the registry with their ratings and costs.
+ * Enumerate all models from the registry with ratings, priors, and costs.
  *
  * @param getRatings - Ratings lookup function
+ * @param getArenaPriors - Raw LM Arena priors lookup function
  * @returns Array of candidates that exist in the capability matrix
  */
-function enumerateCandidates(getRatings: RatingsLookup): ScoredCandidate[] {
+function enumerateCandidates(
+	getRatings: RatingsLookup,
+	getArenaPriors: (modelId: string) => ModelArenaScores | undefined
+): ScoredCandidate[] {
 	const candidates: ScoredCandidate[] = [];
 	for (const provider of getProviders()) {
 		for (const model of getModels(provider)) {
 			const ratings = getRatings(model.id);
 			if (!ratings) continue;
 			candidates.push({
+				arenaScores: getArenaPriors(model.id),
 				effectiveCost: (model.cost.input + model.cost.output) / 2,
 				ratings,
 				resolved: {
@@ -224,13 +238,19 @@ function enumerateCandidates(getRatings: RatingsLookup): ScoredCandidate[] {
  * Convert a pre-resolved pool into scored candidates.
  *
  * Used for scoped routing: takes fuzzy-matched models and enriches them
- * with ratings and cost data so they can be filtered/sorted by selectModels.
+ * with ratings, priors, and cost data so they can be filtered/sorted by
+ * `selectModels`.
  *
  * @param pool - Pre-resolved models to convert
  * @param getRatings - Ratings lookup function
+ * @param getArenaPriors - Raw LM Arena priors lookup function
  * @returns Scored candidates (only those with matrix ratings and registry costs)
  */
-function candidatesFromPool(pool: ResolvedModel[], getRatings: RatingsLookup): ScoredCandidate[] {
+function candidatesFromPool(
+	pool: ResolvedModel[],
+	getRatings: RatingsLookup,
+	getArenaPriors: (modelId: string) => ModelArenaScores | undefined
+): ScoredCandidate[] {
 	const candidates: ScoredCandidate[] = [];
 	const costIndex = buildCostIndex();
 	for (const resolved of pool) {
@@ -238,13 +258,21 @@ function candidatesFromPool(pool: ResolvedModel[], getRatings: RatingsLookup): S
 		if (!ratings) continue;
 		const effectiveCost = costIndex.get(`${resolved.provider}/${resolved.id}`);
 		if (effectiveCost === undefined) continue;
-		candidates.push({ effectiveCost, ratings, resolved });
+		candidates.push({
+			arenaScores: getArenaPriors(resolved.id),
+			effectiveCost,
+			ratings,
+			resolved,
+		});
 	}
 	return candidates;
 }
 
 /**
  * Resolve a route signal for a candidate from a telemetry snapshot.
+ *
+ * Keys are canonicalized at sanitization time, so lookup here is strict and
+ * deterministic (`provider/modelId` lowercase).
  *
  * @param candidate - Candidate model
  * @param signals - Optional telemetry snapshot
@@ -256,31 +284,17 @@ function getRouteSignal(
 ): RoutingRouteSignal | undefined {
 	const routes = signals?.routes;
 	if (!routes) return undefined;
-
-	const provider = candidate.resolved.provider.toLowerCase();
-	const id = candidate.resolved.id.toLowerCase();
-	const directKey = `${provider}/${id}`;
-	const directPipeKey = `${provider}|${id}`;
-	if (routes[directKey]) return routes[directKey];
-	if (routes[directPipeKey]) return routes[directPipeKey];
-
-	for (const [key, routeSignal] of Object.entries(routes)) {
-		const normalizedKey = key.toLowerCase();
-		if (!normalizedKey.includes(id)) continue;
-		if (
-			normalizedKey.startsWith(`${provider}/`) ||
-			normalizedKey.includes(`${provider}|`) ||
-			normalizedKey.includes(`provider=${provider}`)
-		) {
-			return routeSignal;
-		}
-	}
-
-	return undefined;
+	const routeKey = buildRouteSignalKey(candidate.resolved.provider, candidate.resolved.id);
+	return routes[routeKey];
 }
 
 /**
  * Resolve a model-level signal for a candidate from a telemetry snapshot.
+ *
+ * Matching order:
+ * 1. canonical model key (`modelId`)
+ * 2. canonical provider-scoped model key (`provider/modelId`)
+ * 3. longest model-prefix key (`modelId` prefix)
  *
  * @param candidate - Candidate model
  * @param signals - Optional telemetry snapshot
@@ -293,14 +307,17 @@ function getModelSignal(
 	const models = signals?.models;
 	if (!models) return undefined;
 
-	const exactIdKey = candidate.resolved.id;
-	if (models[exactIdKey]) return models[exactIdKey];
+	const modelKey = buildModelSignalKey(candidate.resolved.id);
+	if (models[modelKey]) return models[modelKey];
 
-	const providerScopedKey = `${candidate.resolved.provider}/${candidate.resolved.id}`;
-	if (models[providerScopedKey]) return models[providerScopedKey];
+	const providerModelKey = buildProviderModelSignalKey(
+		candidate.resolved.provider,
+		candidate.resolved.id
+	);
+	if (models[providerModelKey]) return models[providerModelKey];
 
 	const matchingPrefix = Object.keys(models)
-		.filter((key) => candidate.resolved.id.startsWith(key))
+		.filter((key) => modelKey.startsWith(key))
 		.sort((a, b) => b.length - a.length)[0];
 
 	return matchingPrefix ? models[matchingPrefix] : undefined;
@@ -363,6 +380,65 @@ function throughputScore(
  */
 function costScore(effectiveCost: number): number {
 	return clamp(1 / (1 + Math.max(0, effectiveCost)), 0, 1);
+}
+
+/** Tier boundaries per task type used for raw-LM-Arena normalization. */
+const ARENA_TIER_BOUNDARIES: Readonly<Record<TaskType, readonly [number, number, number, number]>> =
+	{
+		code: [1180, 1280, 1370, 1440],
+		text: [1320, 1370, 1410, 1460],
+		vision: [1100, 1150, 1200, 1250],
+	} as const;
+
+/**
+ * Normalize a raw LM Arena prior into [0,1] using tier boundaries.
+ *
+ * This preserves the existing 5-tier structure while adding within-tier
+ * resolution so close models don't collapse to identical capability scores.
+ *
+ * @param taskType - Task type
+ * @param rawScore - Raw LM Arena score for this task
+ * @returns Normalized capability in [0,1]
+ */
+function normalizeArenaPrior(taskType: TaskType, rawScore: number): number {
+	const [tier2, tier3, tier4, tier5] = ARENA_TIER_BOUNDARIES[taskType];
+
+	if (rawScore < tier2) {
+		return clamp((rawScore / tier2) * 0.2, 0, 0.2);
+	}
+	if (rawScore < tier3) {
+		return clamp(0.2 + ((rawScore - tier2) / (tier3 - tier2)) * 0.2, 0.2, 0.4);
+	}
+	if (rawScore < tier4) {
+		return clamp(0.4 + ((rawScore - tier3) / (tier4 - tier3)) * 0.2, 0.4, 0.6);
+	}
+	if (rawScore < tier5) {
+		return clamp(0.6 + ((rawScore - tier4) / (tier5 - tier4)) * 0.2, 0.6, 0.8);
+	}
+
+	const topBandWidth = tier5 - tier4;
+	return clamp(0.8 + ((rawScore - tier5) / topBandWidth) * 0.2, 0.8, 1);
+}
+
+/**
+ * Resolve capability component score using raw priors when available.
+ *
+ * Fallback is the coarse matrix tier score (`rating / 5`).
+ *
+ * @param taskType - Task type
+ * @param taskRating - Matrix tier rating (1..5)
+ * @param arenaScore - Optional raw LM Arena score for this task
+ * @returns Capability component in [0,1]
+ */
+function capabilityComponentScore(
+	taskType: TaskType,
+	taskRating: number,
+	arenaScore?: number
+): number {
+	if (arenaScore !== undefined) {
+		return normalizeArenaPrior(taskType, arenaScore);
+	}
+	return clamp(taskRating / 5, 0, 1);
 }
 
 /**
@@ -429,8 +505,9 @@ function computeModeScore(
 	const routeSignal = getRouteSignal(candidate, signals);
 	const modelSignal = getModelSignal(candidate, signals);
 	const taskRating = candidate.ratings[taskType] ?? 0;
+	const arenaScore = candidate.arenaScores?.[taskType];
 
-	const capability = clamp(taskRating / 5, 0, 1);
+	const capability = capabilityComponentScore(taskType, taskRating, arenaScore);
 	const reliability = reliabilityScore(routeSignal);
 	const latency = latencyScore(routeSignal, modelSignal);
 	const throughput = throughputScore(routeSignal, modelSignal);
@@ -542,9 +619,10 @@ export function selectModels(
 
 	const prefMap = buildProviderPreferenceMap(options.preferredProviders);
 	const getRatings = createModelRatingsLookup({ matrixOverrides: options.matrixOverrides });
+	const getArenaPriors = createModelArenaPriorsLookup();
 	const allCandidates = options.pool
-		? candidatesFromPool(options.pool, getRatings)
-		: enumerateCandidates(getRatings);
+		? candidatesFromPool(options.pool, getRatings, getArenaPriors)
+		: enumerateCandidates(getRatings, getArenaPriors);
 
 	if (!options.routingMode) {
 		const legacyCandidates = allCandidates.filter((candidate) => {
@@ -561,7 +639,11 @@ export function selectModels(
 		).map((candidate) => candidate.resolved);
 	}
 
-	const policy = getEffectiveModePolicy(options.routingMode, options.routingModePolicyOverride);
+	const routingSignals = sanitizeRoutingSignalsSnapshot(options.routingSignals);
+	const routingModePolicyOverride = sanitizeRoutingModePolicyOverride(
+		options.routingModePolicyOverride
+	);
+	const policy = getEffectiveModePolicy(options.routingMode, routingModePolicyOverride);
 	const effectiveComplexity = clamp(classification.complexity + policy.complexityBias, 1, 5);
 	const taskFloor = Math.max(policy.taskFloors?.[classification.type] ?? 1, effectiveComplexity);
 
@@ -572,13 +654,13 @@ export function selectModels(
 	if (capableCandidates.length === 0) return [];
 
 	const constrainedCandidates = capableCandidates.filter((candidate) =>
-		passesModeConstraints(candidate, policy, options.routingSignals)
+		passesModeConstraints(candidate, policy, routingSignals)
 	);
 	const scoringPool = constrainedCandidates.length > 0 ? constrainedCandidates : capableCandidates;
 
 	const modeScoredCandidates: ModeScoredCandidate[] = scoringPool.map((candidate) => ({
 		...candidate,
-		score: computeModeScore(candidate, classification.type, policy, options.routingSignals),
+		score: computeModeScore(candidate, classification.type, policy, routingSignals),
 	}));
 
 	const tieBreakPreference = modeTieBreakPreference(options.routingMode, costPreference);

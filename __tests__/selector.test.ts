@@ -282,4 +282,41 @@ describe("selectModels — routing modes", () => {
 		});
 		expect(ranked.map((m) => m.id)).toContain("claude-sonnet-4-5-20250514");
 	});
+
+	it("normalizes legacy pipe route keys via runtime sanitization", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "fast",
+			routingSignals: {
+				generatedAtMs: Date.now(),
+				routes: {
+					"anthropic|claude-sonnet-4-5-20250514": {
+						latencyP90Ms: 250,
+						observedAtMs: Date.now(),
+					},
+					"anthropic/claude-opus-4-6": {
+						latencyP90Ms: 3000,
+						observedAtMs: Date.now(),
+					},
+				},
+			},
+		});
+		expect(ranked[0].id).toBe("claude-sonnet-4-5-20250514");
+	});
+
+	it("ignores invalid routing signal values instead of applying them", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "reliable",
+			routingSignals: {
+				generatedAtMs: Date.now(),
+				routes: {
+					"google/gemini-3-flash": {
+						// invalid (>1), should be dropped at sanitization and not filtered
+						uptime: 2,
+						observedAtMs: Date.now(),
+					},
+				},
+			},
+		});
+		expect(ranked.map((m) => `${m.provider}/${m.id}`)).toContain("google/gemini-3-flash");
+	});
 });
