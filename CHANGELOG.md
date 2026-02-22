@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.4...synapse-v0.1.5) (2026-02-22)
+
+
+### Added
+
+* harden routing signals and add arena priors ([a3b24ba](https://github.com/dungle-scrubs/synapse/commit/a3b24ba9a82b558599f47385c2705251ff2b8c3d))
+* **routing:** harden signals and add arena priors ([22ce93d](https://github.com/dungle-scrubs/synapse/commit/22ce93d8310df983bdde85b4fd6116f290509dec))
+
+
+### Maintenance
+
+* **git:** ignore AGENTS.md ([9a40927](https://github.com/dungle-scrubs/synapse/commit/9a409275a39d5b699db883ca753439b57218a44b))
+* **git:** ignore local .tallow metadata ([7854ca2](https://github.com/dungle-scrubs/synapse/commit/7854ca213939e149c6a1277ba784e56b1eefbe57))
+
 ## [0.1.4](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.3...synapse-v0.1.4) (2026-02-21)
 
 
