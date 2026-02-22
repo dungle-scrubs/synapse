@@ -10,6 +10,9 @@ export type ModelRatings = Partial<Record<TaskType, number>>;
 /** Per-model matrix overrides. `null` removes an entry from the base matrix. */
 export type ModelMatrixOverrides = Readonly<Record<string, ModelRatings | null>>;
 
+/** Optional raw LM Arena prior scores keyed per task type. */
+export type ModelArenaScores = Partial<Record<TaskType, number>>;
+
 /** User's cost preference for model routing. */
 export type CostPreference = "eco" | "balanced" | "premium";
 

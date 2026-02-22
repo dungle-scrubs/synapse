@@ -10,6 +10,7 @@ export type {
 	CandidateModel,
 	ClassificationResult,
 	CostPreference,
+	ModelArenaScores,
 	ModelMatrixOverrides,
 	ModelRatings,
 	ModelSource,
@@ -29,9 +30,12 @@ export type {
 // Matrix
 export {
 	applyModelMatrixOverrides,
+	createModelArenaPriorsLookup,
 	createModelMatrixOverrideTemplate,
 	createModelRatingsLookup,
+	getModelArenaPriors,
 	getModelRatings,
+	MODEL_ARENA_PRIORS,
 	MODEL_MATRIX,
 	modelSupportsTask,
 	parseModelMatrixOverrides,
@@ -41,6 +45,17 @@ export type {
 	ModelMatrixOverrideTemplate,
 	ModelRatingsLookupOptions,
 } from "./matrix.js";
+
+// Routing signal helpers
+export {
+	buildModelSignalKey,
+	buildProviderModelSignalKey,
+	buildRouteSignalKey,
+	parseRouteSignalKey,
+	sanitizeRoutingModePolicyOverride,
+	sanitizeRoutingSignalsSnapshot,
+} from "./routing-signals.js";
+export type { RouteSignalKeyParts } from "./routing-signals.js";
 
 // Resolver
 export { listAvailableModels, resolveModelCandidates, resolveModelFuzzy } from "./resolver.js";
