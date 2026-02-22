@@ -237,6 +237,30 @@ describe("selectModels — routing modes", () => {
 		expect(ids).not.toContain("claude-haiku-4-5-20250514");
 	});
 
+	it("matrixOverrides control capability scoring in routing modes", () => {
+		const withoutOverride = selectModels(
+			{ type: "code", complexity: 2, reasoning: "test" },
+			"balanced",
+			{
+				routingMode: "quality",
+			}
+		);
+		expect(withoutOverride[0]?.id).toBe("claude-opus-4-6");
+
+		const withOverride = selectModels(
+			{ type: "code", complexity: 2, reasoning: "test" },
+			"balanced",
+			{
+				matrixOverrides: {
+					"claude-opus-4-6": { code: 3, text: 3, vision: 3 },
+				},
+				routingMode: "quality",
+			}
+		);
+		expect(withOverride.map((m) => m.id)).toContain("claude-opus-4-6");
+		expect(withOverride[0]?.id).toBe("gemini-3-flash");
+	});
+
 	it("fast mode uses latency signals for ranking", () => {
 		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
 			routingMode: "fast",

@@ -169,6 +169,16 @@ function providerPriority(prefMap: ReadonlyMap<string, number>, provider: string
 }
 
 /**
+ * Check whether options include any matrix override entries.
+ *
+ * @param matrixOverrides - Optional matrix override map
+ * @returns true when at least one override entry is present
+ */
+function hasMatrixOverrides(matrixOverrides?: ModelMatrixOverrides): boolean {
+	return matrixOverrides !== undefined && Object.keys(matrixOverrides).length > 0;
+}
+
+/**
  * Merge a built-in mode policy with a partial override.
  *
  * @param mode - Active routing mode
@@ -428,14 +438,16 @@ function normalizeArenaPrior(taskType: TaskType, rawScore: number): number {
  * @param taskType - Task type
  * @param taskRating - Matrix tier rating (1..5)
  * @param arenaScore - Optional raw LM Arena score for this task
+ * @param useArenaPriors - Whether raw priors should participate in scoring
  * @returns Capability component in [0,1]
  */
 function capabilityComponentScore(
 	taskType: TaskType,
 	taskRating: number,
-	arenaScore?: number
+	arenaScore: number | undefined,
+	useArenaPriors: boolean
 ): number {
-	if (arenaScore !== undefined) {
+	if (useArenaPriors && arenaScore !== undefined) {
 		return normalizeArenaPrior(taskType, arenaScore);
 	}
 	return clamp(taskRating / 5, 0, 1);
@@ -494,20 +506,22 @@ function passesModeConstraints(
  * @param taskType - Classified task type
  * @param policy - Effective routing mode policy
  * @param signals - Optional telemetry snapshot
+ * @param useArenaPriors - Whether raw priors should participate in scoring
  * @returns Aggregate weighted score (higher is better)
  */
 function computeModeScore(
 	candidate: ScoredCandidate,
 	taskType: TaskType,
 	policy: RoutingModePolicy,
-	signals: RoutingSignalsSnapshot | undefined
+	signals: RoutingSignalsSnapshot | undefined,
+	useArenaPriors: boolean
 ): number {
 	const routeSignal = getRouteSignal(candidate, signals);
 	const modelSignal = getModelSignal(candidate, signals);
 	const taskRating = candidate.ratings[taskType] ?? 0;
 	const arenaScore = candidate.arenaScores?.[taskType];
 
-	const capability = capabilityComponentScore(taskType, taskRating, arenaScore);
+	const capability = capabilityComponentScore(taskType, taskRating, arenaScore, useArenaPriors);
 	const reliability = reliabilityScore(routeSignal);
 	const latency = latencyScore(routeSignal, modelSignal);
 	const throughput = throughputScore(routeSignal, modelSignal);
@@ -600,6 +614,7 @@ function modeTieBreakPreference(mode: RoutingMode, fallback: CostPreference): Co
  * 2. Apply complexity bias and task-floor filtering
  * 3. Apply hard constraints when matching telemetry exists
  * 4. Weighted-score candidates (capability/reliability/latency/throughput/cost)
+ *    - capability uses raw LM Arena priors only when no matrix overrides are supplied
  * 5. Sort by score desc, then tie-break by provider preference and cost preference
  *
  * @param classification - Task classification result
@@ -620,6 +635,7 @@ export function selectModels(
 	const prefMap = buildProviderPreferenceMap(options.preferredProviders);
 	const getRatings = createModelRatingsLookup({ matrixOverrides: options.matrixOverrides });
 	const getArenaPriors = createModelArenaPriorsLookup();
+	const useArenaPriors = !hasMatrixOverrides(options.matrixOverrides);
 	const allCandidates = options.pool
 		? candidatesFromPool(options.pool, getRatings, getArenaPriors)
 		: enumerateCandidates(getRatings, getArenaPriors);
@@ -660,7 +676,7 @@ export function selectModels(
 
 	const modeScoredCandidates: ModeScoredCandidate[] = scoringPool.map((candidate) => ({
 		...candidate,
-		score: computeModeScore(candidate, classification.type, policy, routingSignals),
+		score: computeModeScore(candidate, classification.type, policy, routingSignals, useArenaPriors),
 	}));
 
 	const tieBreakPreference = modeTieBreakPreference(options.routingMode, costPreference);
