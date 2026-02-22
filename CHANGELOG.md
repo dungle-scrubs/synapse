@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* harden routing signals and add arena priors ([a3b24ba](https://github.com/dungle-scrubs/synapse/commit/a3b24ba9a82b558599f47385c2705251ff2b8c3d))
 * **routing:** harden signals and add arena priors ([22ce93d](https://github.com/dungle-scrubs/synapse/commit/22ce93d8310df983bdde85b4fd6116f290509dec))
 
 
