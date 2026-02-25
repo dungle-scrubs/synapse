@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.5...synapse-v0.1.6) (2026-02-25)
+
+
+### Added
+
+* model exclusion patterns for selection ([#11](https://github.com/dungle-scrubs/synapse/issues/11)) ([917665a](https://github.com/dungle-scrubs/synapse/commit/917665a914ce0b13b53fda2ce780d96112f2be70))
+
+
+### Maintenance
+
+* harden release + add routing brand assets ([#10](https://github.com/dungle-scrubs/synapse/issues/10)) ([f89d26f](https://github.com/dungle-scrubs/synapse/commit/f89d26f04c7d4b615465ef4060d7556a4a2fca7f))
+* retrigger release-please ([ac54a1c](https://github.com/dungle-scrubs/synapse/commit/ac54a1c3121718914d09695eba262acb72eb20de))
+
 ## [0.1.5](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.4...synapse-v0.1.5) (2026-02-22)
 
 
