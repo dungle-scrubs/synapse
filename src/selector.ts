@@ -106,6 +106,22 @@ const DEFAULT_MODE_POLICIES: Readonly<Record<RoutingMode, RoutingModePolicy>> = 
 
 /** Options for model selection. */
 export interface SelectionOptions {
+	/**
+	 * Exclusion patterns to block models from selection results.
+	 *
+	 * Each entry is prefix-matched against the provider name, model ID, and
+	 * the combined `provider/modelId` string. A candidate is excluded when
+	 * any pattern matches:
+	 *
+	 * - `"openai"` → blocks providers starting with "openai" (matches "openai"
+	 *   and "openai-codex" but not "github-copilot")
+	 * - `"gpt-5.1"` → blocks model IDs starting with "gpt-5.1" across all providers
+	 * - `"openai/gpt-5.1"` → blocks only the openai provider's gpt-5.1
+	 *
+	 * Applied after candidate enumeration, before ranking. Empty array or
+	 * undefined means no exclusions.
+	 */
+	exclude?: string[];
 	/** Optional per-model matrix overrides from host configuration. */
 	matrixOverrides?: ModelMatrixOverrides;
 	/** Pre-resolved model pool for scoped routing. */
@@ -155,6 +171,31 @@ function buildProviderPreferenceMap(preferredProviders?: string[]): Map<string, 
 		prefMap.set(preferredProviders[i], i);
 	}
 	return prefMap;
+}
+
+/**
+ * Check whether a candidate matches any exclusion pattern.
+ *
+ * Each pattern is prefix-matched against:
+ * 1. The combined `provider/modelId` string (when pattern contains "/")
+ * 2. The provider name (prefix)
+ * 3. The model ID (prefix)
+ *
+ * @param provider - Candidate provider name
+ * @param modelId - Candidate model ID
+ * @param patterns - Exclusion patterns
+ * @returns true when the candidate should be excluded
+ */
+function isExcluded(provider: string, modelId: string, patterns: string[]): boolean {
+	const combined = `${provider}/${modelId}`;
+	for (const pattern of patterns) {
+		if (pattern.includes("/")) {
+			if (combined.startsWith(pattern)) return true;
+		} else {
+			if (provider.startsWith(pattern) || modelId.startsWith(pattern)) return true;
+		}
+	}
+	return false;
 }
 
 /**
@@ -620,9 +661,17 @@ export function selectModels(
 	const prefMap = buildProviderPreferenceMap(options.preferredProviders);
 	const getRatings = createModelRatingsLookup({ matrixOverrides: options.matrixOverrides });
 	const getArenaPriors = createModelArenaPriorsLookup();
-	const allCandidates = options.pool
+	const rawCandidates = options.pool
 		? candidatesFromPool(options.pool, getRatings, getArenaPriors)
 		: enumerateCandidates(getRatings, getArenaPriors);
+
+	const excludePatterns = options.exclude?.filter((p) => p.length > 0);
+	const allCandidates =
+		excludePatterns && excludePatterns.length > 0
+			? rawCandidates.filter(
+					(c) => !isExcluded(c.resolved.provider, c.resolved.id, excludePatterns)
+				)
+			: rawCandidates;
 
 	if (!options.routingMode) {
 		const legacyCandidates = allCandidates.filter((candidate) => {
