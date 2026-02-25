@@ -130,8 +130,22 @@ export interface CreateModelMatrixOverrideTemplateOptions {
  * JSON-friendly override template shape.
  */
 export interface ModelMatrixOverrideTemplate {
+	/** Exclusion patterns to block models from selection results. */
+	exclude: string[];
 	/** Map of model-prefix overrides passed via `matrixOverrides`. */
 	matrixOverrides: ModelMatrixOverrides;
+}
+
+/**
+ * Parsed synapse configuration from a config file or settings object.
+ *
+ * Consumers load this from a JSON file and spread it into `SelectionOptions`.
+ */
+export interface SynapseConfig {
+	/** Exclusion patterns to block models from selection results. */
+	exclude?: string[];
+	/** Per-model capability matrix overrides. */
+	matrixOverrides?: ModelMatrixOverrides;
 }
 
 /**
@@ -385,6 +399,43 @@ export function parseModelMatrixOverrides(input: unknown): ModelMatrixOverrides 
 }
 
 /**
+ * Parse an unknown payload into a validated synapse config.
+ *
+ * Extracts `exclude` and `matrixOverrides` from a config object.
+ * Invalid fields are silently dropped. Returns undefined when the
+ * root is not a plain object.
+ *
+ * @param input - Unknown payload from JSON/settings
+ * @returns Validated config, or undefined on invalid root
+ */
+export function parseSynapseConfig(input: unknown): SynapseConfig | undefined {
+	if (!isRecord(input)) return undefined;
+
+	const config: SynapseConfig = {};
+
+	// Parse exclude patterns
+	const rawExclude = input.exclude;
+	if (Array.isArray(rawExclude)) {
+		const patterns = rawExclude.filter(
+			(entry): entry is string => typeof entry === "string" && entry.length > 0
+		);
+		if (patterns.length > 0) {
+			config.exclude = patterns;
+		}
+	}
+
+	// Parse matrix overrides (reuse existing parser on the nested field)
+	if (Object.hasOwn(input, "matrixOverrides")) {
+		const overrides = parseModelMatrixOverrides(input.matrixOverrides);
+		if (overrides && Object.keys(overrides).length > 0) {
+			config.matrixOverrides = overrides;
+		}
+	}
+
+	return config;
+}
+
+/**
  * Create a JSON template users can edit for matrix overrides.
  *
  * @param options - Template generation options
@@ -395,6 +446,7 @@ export function createModelMatrixOverrideTemplate(
 ): ModelMatrixOverrideTemplate {
 	const includeCurrentMatrix = options?.includeCurrentMatrix ?? true;
 	return {
+		exclude: [],
 		matrixOverrides: includeCurrentMatrix ? copyMatrix(MODEL_MATRIX) : {},
 	};
 }

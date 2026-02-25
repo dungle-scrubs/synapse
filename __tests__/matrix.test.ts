@@ -7,6 +7,7 @@ import {
 	getModelRatings,
 	modelSupportsTask,
 	parseModelMatrixOverrides,
+	parseSynapseConfig,
 } from "../src/matrix.js";
 
 describe("getModelRatings", () => {
@@ -145,14 +146,85 @@ describe("parseModelMatrixOverrides", () => {
 });
 
 describe("createModelMatrixOverrideTemplate", () => {
-	it("includes current matrix by default", () => {
+	it("includes current matrix and empty exclude by default", () => {
 		const template = createModelMatrixOverrideTemplate();
 		expect(template.matrixOverrides["claude-opus-4-6"]).toEqual({ code: 5, vision: 3, text: 5 });
+		expect(template.exclude).toEqual([]);
 	});
 
 	it("supports empty template generation", () => {
 		const template = createModelMatrixOverrideTemplate({ includeCurrentMatrix: false });
-		expect(template).toEqual({ matrixOverrides: {} });
+		expect(template).toEqual({ exclude: [], matrixOverrides: {} });
+	});
+});
+
+describe("parseSynapseConfig", () => {
+	it("parses both exclude and matrixOverrides", () => {
+		const config = parseSynapseConfig({
+			exclude: ["openai", "google"],
+			matrixOverrides: {
+				"claude-opus-4-6": { code: 4, text: 4 },
+			},
+		});
+		expect(config).toBeDefined();
+		expect(config!.exclude).toEqual(["openai", "google"]);
+		expect(config!.matrixOverrides).toEqual({
+			"claude-opus-4-6": { code: 4, text: 4 },
+		});
+	});
+
+	it("parses exclude-only config", () => {
+		const config = parseSynapseConfig({ exclude: ["openai"] });
+		expect(config).toBeDefined();
+		expect(config!.exclude).toEqual(["openai"]);
+		expect(config!.matrixOverrides).toBeUndefined();
+	});
+
+	it("parses matrixOverrides-only config", () => {
+		const config = parseSynapseConfig({
+			matrixOverrides: { "claude-opus-4-6": { code: 4 } },
+		});
+		expect(config).toBeDefined();
+		expect(config!.exclude).toBeUndefined();
+		expect(config!.matrixOverrides).toEqual({ "claude-opus-4-6": { code: 4 } });
+	});
+
+	it("drops non-string entries from exclude", () => {
+		const config = parseSynapseConfig({
+			exclude: ["openai", 42, null, "google", "", true],
+		});
+		expect(config!.exclude).toEqual(["openai", "google"]);
+	});
+
+	it("omits exclude when array has no valid entries", () => {
+		const config = parseSynapseConfig({ exclude: [42, null, ""] });
+		expect(config!.exclude).toBeUndefined();
+	});
+
+	it("returns empty config for empty object", () => {
+		const config = parseSynapseConfig({});
+		expect(config).toEqual({});
+	});
+
+	it("returns undefined for non-object input", () => {
+		expect(parseSynapseConfig("string")).toBeUndefined();
+		expect(parseSynapseConfig(null)).toBeUndefined();
+		expect(parseSynapseConfig(42)).toBeUndefined();
+		expect(parseSynapseConfig([])).toBeUndefined();
+	});
+
+	it("ignores unknown fields", () => {
+		const config = parseSynapseConfig({
+			exclude: ["openai"],
+			unknownField: "hello",
+		});
+		expect(config).toEqual({ exclude: ["openai"] });
+	});
+
+	it("round-trips with createModelMatrixOverrideTemplate output", () => {
+		const template = createModelMatrixOverrideTemplate({ includeCurrentMatrix: false });
+		const config = parseSynapseConfig(template);
+		expect(config).toEqual({});
 	});
 });
 
