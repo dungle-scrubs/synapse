@@ -39,11 +39,13 @@ export {
 	MODEL_MATRIX,
 	modelSupportsTask,
 	parseModelMatrixOverrides,
+	parseSynapseConfig,
 } from "./matrix.js";
 export type {
 	CreateModelMatrixOverrideTemplateOptions,
 	ModelMatrixOverrideTemplate,
 	ModelRatingsLookupOptions,
+	SynapseConfig,
 } from "./matrix.js";
 
 // Routing signal helpers

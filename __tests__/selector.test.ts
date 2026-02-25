@@ -218,6 +218,86 @@ describe("selectModels — preferredProviders", () => {
 	});
 });
 
+describe("selectModels — exclude", () => {
+	it("excludes all models from a provider by prefix", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["openai"],
+		});
+		const providers = ranked.map((m) => m.provider);
+		expect(providers).not.toContain("openai");
+		expect(providers).not.toContain("openai-codex");
+		// github-copilot serves gpt-5.1 but its provider doesn't start with "openai"
+		expect(providers).toContain("github-copilot");
+	});
+
+	it("excludes a specific provider without affecting similar names", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["openai-codex"],
+		});
+		const providers = ranked.map((m) => m.provider);
+		expect(providers).not.toContain("openai-codex");
+		expect(providers).toContain("openai");
+	});
+
+	it("excludes by model ID prefix across all providers", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["gpt-5"],
+		});
+		const ids = ranked.map((m) => m.id);
+		expect(ids).not.toContain("gpt-5.1");
+		// Anthropic and Google models still present
+		expect(ranked.some((m) => m.provider === "anthropic")).toBe(true);
+		expect(ranked.some((m) => m.provider === "google")).toBe(true);
+	});
+
+	it("excludes by exact provider/model combo", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["openai/gpt-5.1"],
+		});
+		const keys = ranked.map((m) => `${m.provider}/${m.id}`);
+		expect(keys).not.toContain("openai/gpt-5.1");
+		// Same model from other providers still present
+		expect(keys).toContain("openai-codex/gpt-5.1");
+		expect(keys).toContain("github-copilot/gpt-5.1");
+	});
+
+	it("supports multiple exclude patterns", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["openai", "google"],
+		});
+		const providers = ranked.map((m) => m.provider);
+		expect(providers).not.toContain("openai");
+		expect(providers).not.toContain("openai-codex");
+		expect(providers).not.toContain("google");
+		expect(providers).toContain("anthropic");
+		expect(providers).toContain("github-copilot");
+	});
+
+	it("returns empty when all candidates are excluded", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["anthropic", "openai", "google", "github-copilot"],
+		});
+		expect(ranked).toEqual([]);
+	});
+
+	it("ignores empty strings in exclude patterns", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: [""],
+		});
+		expect(ranked.length).toBeGreaterThan(0);
+	});
+
+	it("works with routing modes", () => {
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			exclude: ["anthropic"],
+			routingMode: "balanced",
+		});
+		const providers = ranked.map((m) => m.provider);
+		expect(providers).not.toContain("anthropic");
+		expect(ranked.length).toBeGreaterThan(0);
+	});
+});
+
 describe("selectModels — routing modes", () => {
 	it("cheap mode can override premium sorting and pick cheaper models", () => {
 		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "premium", {
