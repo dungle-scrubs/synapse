@@ -167,8 +167,8 @@ describe("parseSynapseConfig", () => {
 			},
 		});
 		expect(config).toBeDefined();
-		expect(config!.exclude).toEqual(["openai", "google"]);
-		expect(config!.matrixOverrides).toEqual({
+		expect(config?.exclude).toEqual(["openai", "google"]);
+		expect(config?.matrixOverrides).toEqual({
 			"claude-opus-4-6": { code: 4, text: 4 },
 		});
 	});
@@ -176,8 +176,8 @@ describe("parseSynapseConfig", () => {
 	it("parses exclude-only config", () => {
 		const config = parseSynapseConfig({ exclude: ["openai"] });
 		expect(config).toBeDefined();
-		expect(config!.exclude).toEqual(["openai"]);
-		expect(config!.matrixOverrides).toBeUndefined();
+		expect(config?.exclude).toEqual(["openai"]);
+		expect(config?.matrixOverrides).toBeUndefined();
 	});
 
 	it("parses matrixOverrides-only config", () => {
@@ -185,20 +185,20 @@ describe("parseSynapseConfig", () => {
 			matrixOverrides: { "claude-opus-4-6": { code: 4 } },
 		});
 		expect(config).toBeDefined();
-		expect(config!.exclude).toBeUndefined();
-		expect(config!.matrixOverrides).toEqual({ "claude-opus-4-6": { code: 4 } });
+		expect(config?.exclude).toBeUndefined();
+		expect(config?.matrixOverrides).toEqual({ "claude-opus-4-6": { code: 4 } });
 	});
 
 	it("drops non-string entries from exclude", () => {
 		const config = parseSynapseConfig({
 			exclude: ["openai", 42, null, "google", "", true],
 		});
-		expect(config!.exclude).toEqual(["openai", "google"]);
+		expect(config?.exclude).toEqual(["openai", "google"]);
 	});
 
 	it("omits exclude when array has no valid entries", () => {
 		const config = parseSynapseConfig({ exclude: [42, null, ""] });
-		expect(config!.exclude).toBeUndefined();
+		expect(config?.exclude).toBeUndefined();
 	});
 
 	it("returns empty config for empty object", () => {
