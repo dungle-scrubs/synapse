@@ -19,13 +19,18 @@
 		"README.md",
 		"CHANGELOG.md"
 	],
+	"overrides": {
+		"fast-xml-parser": "^5.3.6",
+		"minimatch": "^10.2.1"
+	},
 	"peerDependencies": {
 		"@mariozechner/pi-ai": ">=0.50.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
-		"@mariozechner/pi-ai": "0.52.12",
+		"@mariozechner/pi-ai": "0.54.1",
 		"@types/bun": "^1.2.5",
+		"husky": "^9.1.7",
 		"typescript": "^5.7.3"
 	},
 	"scripts": {
@@ -33,7 +38,8 @@
 		"typecheck": "tsc --noEmit",
 		"test": "bun test --preload ./__tests__/preload.ts",
 		"lint": "biome check src/ __tests__/",
-		"lint:fix": "biome check --write src/ __tests__/"
+		"lint:fix": "biome check --write src/ __tests__/",
+		"prepare": "husky"
 	},
 	"repository": {
 		"type": "git",

@@ -9,6 +9,13 @@ bun run lint
 bun test
 ```
 
+## Git hooks
+
+`bun install` runs `prepare`, which installs Husky hooks.
+
+- `pre-commit`: `bun run typecheck`, `bun run lint`, `bun test`
+- `pre-push`: `trufflehog git file://. --only-verified`
+
 ## Commit conventions
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
