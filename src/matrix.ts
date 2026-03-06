@@ -10,7 +10,7 @@ import type { ModelArenaScores, ModelMatrixOverrides, ModelRatings, TaskType } f
 /**
  * Multi-dimensional model capability matrix.
  *
- * Source: Arena leaderboards (arena.ai/leaderboard/*), updated 2026-02-21.
+ * Source: Arena leaderboards (arena.ai/leaderboard/*), updated 2026-03-06.
  *
  * ELO → tier mapping per leaderboard (each has different ELO scale):
  *   Code:   5=≥1440  4=1370-1439  3=1280-1369  2=1180-1279  1=<1180
@@ -53,7 +53,7 @@ export const MODEL_MATRIX: Record<string, ModelRatings> = {
 	"minimax-m2.1": { code: 4, text: 3 },
 	"minimax-m2": { code: 3, text: 2 },
 	// Moonshot (Kimi)
-	"kimi-k2.5": { code: 4, text: 4 },
+	"kimi-k2.5": { code: 4, vision: 4, text: 4 },
 	"kimi-k2": { code: 3, text: 4 },
 	// Qwen (Alibaba)
 	"qwen3-coder": { code: 3, text: 3 },
@@ -74,29 +74,30 @@ export const MODEL_MATRIX: Record<string, ModelRatings> = {
  * among models that already pass tier filters.
  */
 export const MODEL_ARENA_PRIORS: Record<string, ModelArenaScores> = {
-	"claude-opus-4-6": { code: 1561, text: 1505 },
-	"claude-opus-4-5": { code: 1469, text: 1467 },
+	"claude-opus-4-6": { code: 1555, text: 1504 },
+	"claude-opus-4-5": { code: 1475, text: 1467 },
 	"claude-opus-4-1": { code: 1389, text: 1446 },
-	"claude-sonnet-4-6": { code: 1524, text: 1457 },
+	"claude-sonnet-4-6": { code: 1523, text: 1459 },
 	"claude-sonnet-4-5": { code: 1386, text: 1450 },
 	"claude-haiku-4-5": { code: 1307, text: 1405 },
-	"gpt-5.2": { code: 1395, vision: 1227, text: 1438 },
-	"gpt-5.1": { code: 1343, vision: 1241, text: 1437 },
+	"gpt-5.2": { code: 1396, vision: 1233, text: 1438 },
+	"gpt-5": { code: 1394, vision: 1225 },
+	"gpt-5.1": { code: 1343, vision: 1240, text: 1437 },
 	"gpt-5.2-codex": { code: 1336 },
 	"gpt-5.1-codex": { code: 1329 },
 	"gpt-5.1-codex-mini": { code: 1243 },
-	"gemini-3-pro": { code: 1444, vision: 1288, text: 1486 },
-	"gemini-3-flash": { code: 1440, vision: 1274, text: 1474 },
+	"gemini-3-pro": { code: 1442, vision: 1288, text: 1485 },
+	"gemini-3-flash": { code: 1442, vision: 1276, text: 1473 },
 	"gemini-2.5-pro": { code: 1205, vision: 1248, text: 1449 },
-	"gemini-2.5-flash": { vision: 1212, text: 1411 },
-	"glm-5": { code: 1456, text: 1452 },
-	"glm-4.7": { code: 1440, text: 1441 },
+	"gemini-2.5-flash": { vision: 1228, text: 1411 },
+	"glm-5": { code: 1447, text: 1453 },
+	"glm-4.7": { code: 1441, text: 1441 },
 	"glm-4.6": { code: 1356, vision: 1163, text: 1425 },
 	"deepseek-reasoner": { code: 1371, text: 1420 },
 	"deepseek-chat": { code: 1319, text: 1419 },
 	"minimax-m2.1": { code: 1402, text: 1385 },
 	"minimax-m2": { code: 1312, text: 1347 },
-	"kimi-k2.5": { code: 1439, vision: 1250, text: 1450 },
+	"kimi-k2.5": { code: 1415, vision: 1239, text: 1450 },
 	"kimi-k2": { code: 1331, text: 1429 },
 	"qwen3-coder": { code: 1282, text: 1386 },
 	"qwen3-max": { text: 1425 },
