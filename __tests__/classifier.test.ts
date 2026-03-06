@@ -92,4 +92,28 @@ describe("classifyTask", () => {
 		expect(result.complexity).toBe(3);
 		expect(result.reasoning).toContain("fallback");
 	});
+
+	it("includes agentRole in the prompt sent to the LLM", async () => {
+		let capturedPrompt = "";
+		const capturingComplete: CompleteFn = async (_p, _m, prompt) => {
+			capturedPrompt = prompt;
+			return '{"type": "code", "complexity": 3, "reasoning": "test"}';
+		};
+		await classifyTask(
+			"Fix a bug",
+			"code",
+			{ listModels, complete: capturingComplete },
+			"security auditor"
+		);
+		expect(capturedPrompt).toContain("security auditor");
+	});
+
+	it("deterministically picks cheapest model on cost tie", () => {
+		const tiedModels: ClassifierModel[] = [
+			{ provider: "beta", id: "model-a", cost: { input: 1, output: 1 } },
+			{ provider: "alpha", id: "model-a", cost: { input: 1, output: 1 } },
+		];
+		const result = findCheapestModel(() => tiedModels);
+		expect(result).toEqual({ provider: "alpha", id: "model-a" });
+	});
 });

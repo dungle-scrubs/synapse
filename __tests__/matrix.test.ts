@@ -56,15 +56,25 @@ describe("getModelRatings", () => {
 
 describe("getModelArenaPriors", () => {
 	it("returns priors for known models", () => {
-		expect(getModelArenaPriors("gemini-3-pro")).toEqual({ code: 1444, vision: 1288, text: 1486 });
+		expect(getModelArenaPriors("gemini-3-pro")).toEqual({ code: 1442, vision: 1288, text: 1485 });
 	});
 
 	it("supports nested provider-qualified IDs", () => {
-		expect(getModelArenaPriors("openrouter/z-ai/glm-5")).toEqual({ code: 1456, text: 1452 });
+		expect(getModelArenaPriors("openrouter/z-ai/glm-5")).toEqual({ code: 1447, text: 1453 });
 	});
 
 	it("returns undefined for unknown models", () => {
 		expect(getModelArenaPriors("unknown-model")).toBeUndefined();
+	});
+
+	it("resolves gpt-5 priors without shadowing gpt-5.1 or gpt-5.2", () => {
+		const gpt5 = getModelArenaPriors("gpt-5-something");
+		expect(gpt5).toEqual({ code: 1394, vision: 1225 });
+		// Longer prefixes must still resolve to their own entries
+		const gpt51 = getModelArenaPriors("gpt-5.1-turbo");
+		expect(gpt51?.code).toBe(1343);
+		const gpt52 = getModelArenaPriors("gpt-5.2-chat-latest");
+		expect(gpt52?.code).toBe(1396);
 	});
 });
 

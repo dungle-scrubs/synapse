@@ -399,4 +399,38 @@ describe("selectModels — routing modes", () => {
 		});
 		expect(ranked.map((m) => `${m.provider}/${m.id}`)).toContain("google/gemini-3-flash");
 	});
+
+	it("discards stale signals when maxSignalAgeMs is set", () => {
+		const staleTime = Date.now() - 600_000; // 10 minutes ago
+		// Stale signals + maxSignalAgeMs → signals discarded, gemini NOT filtered.
+		const withStaleness = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "reliable",
+			maxSignalAgeMs: 300_000, // 5 minutes
+			routingSignals: {
+				generatedAtMs: staleTime,
+				routes: {
+					"google/gemini-3-flash": { uptime: 0.82, observedAtMs: staleTime },
+				},
+			},
+		});
+		expect(withStaleness.map((m) => `${m.provider}/${m.id}`)).toContain("google/gemini-3-flash");
+
+		// Without maxSignalAgeMs, same signals ARE applied and gemini is filtered.
+		const withoutStaleness = selectModels(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "reliable",
+				routingSignals: {
+					generatedAtMs: staleTime,
+					routes: {
+						"google/gemini-3-flash": { uptime: 0.82, observedAtMs: staleTime },
+					},
+				},
+			}
+		);
+		expect(withoutStaleness.map((m) => `${m.provider}/${m.id}`)).not.toContain(
+			"google/gemini-3-flash"
+		);
+	});
 });

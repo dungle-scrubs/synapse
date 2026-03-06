@@ -35,6 +35,11 @@ describe("routing signal key helpers", () => {
 		expect(parseRouteSignalKey("openai/")).toBeUndefined();
 	});
 
+	it("parseRouteSignalKey rejects ambiguous keys with both / and |", () => {
+		expect(parseRouteSignalKey("open|router/model")).toBeUndefined();
+		expect(parseRouteSignalKey("provider/model|extra")).toBeUndefined();
+	});
+
 	it("buildModelSignalKey and buildProviderModelSignalKey normalize keys", () => {
 		expect(buildModelSignalKey(" GPT-5.1 ")).toBe("gpt-5.1");
 		expect(buildProviderModelSignalKey(" OpenAI ", " GPT-5.1 ")).toBe("openai/gpt-5.1");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { listAvailableModels, resolveModelFuzzy } from "../src/resolver.js";
+import { listAvailableModels, resolveModelCandidates, resolveModelFuzzy } from "../src/resolver.js";
 import type { ModelSource } from "../src/types.js";
 
 /**
@@ -167,6 +167,26 @@ describe("resolveModelFuzzy — preferredProviders", () => {
 		const withPref = resolveModelFuzzy("sonnet", mpSource, []);
 		const withoutPref = resolveModelFuzzy("sonnet", mpSource);
 		expect(withPref?.id).toBe(withoutPref?.id);
+	});
+});
+
+describe("resolveModelCandidates", () => {
+	it("returns all tied candidates for ambiguous query", () => {
+		// "glm" matches glm-5 from both z-ai and openrouter
+		const multiSource: ModelSource = () => [
+			{ id: "glm-5", name: "GLM 5", provider: "z-ai" },
+			{ id: "glm-5", name: "GLM 5", provider: "openrouter" },
+			{ id: "gpt-5.2", name: "GPT-5.2", provider: "openai" },
+		];
+		const candidates = resolveModelCandidates("glm-5", multiSource);
+		expect(candidates.length).toBe(2);
+		for (const c of candidates) {
+			expect(c.id).toBe("glm-5");
+		}
+	});
+
+	it("returns empty for no match", () => {
+		expect(resolveModelCandidates("nonexistent", source)).toEqual([]);
 	});
 });
 
