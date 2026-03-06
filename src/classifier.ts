@@ -28,6 +28,27 @@ export type ModelLister = () => ClassifierModel[];
 export type CompleteFn = (provider: string, modelId: string, prompt: string) => Promise<string>;
 
 /**
+ * Options for task classification.
+ *
+ * Accepts either as the 4th argument to `classifyTask`, or pass a plain
+ * string for backward-compatible `agentRole` usage.
+ */
+export interface ClassifyTaskOptions {
+	/** Agent role context included in the classification prompt. */
+	agentRole?: string;
+	/**
+	 * Override the classifier model instead of auto-selecting the cheapest.
+	 *
+	 * By default, `classifyTask` uses the cheapest available model to break
+	 * the bootstrapping cycle (need a model to classify, need classification
+	 * to pick a model). This works when cheap models handle structured output
+	 * well, but callers who need higher classification accuracy — or who
+	 * already know which model to trust — can specify one explicitly.
+	 */
+	classifierModel?: { provider: string; id: string };
+}
+
+/**
  * Finds the cheapest available model by effective cost.
  *
  * When multiple models share the same lowest cost, the winner is
@@ -118,50 +139,61 @@ function extractJson(raw: string): Record<string, unknown> | undefined {
 }
 
 /**
- * Classify a task's type and complexity using the cheapest available LLM.
+ * Classify a task's type and complexity using an LLM.
+ *
+ * By default uses the cheapest available model to break the bootstrapping
+ * cycle. Pass `classifierModel` in the options to override this — useful
+ * when the cheapest model produces poor structured output, or when the
+ * caller already knows which model to trust for classification.
  *
  * @param task - The task description to classify
  * @param primaryType - Agent's default type (used when ambiguous or on failure)
  * @param deps - Injected dependencies: listModels and complete functions
- * @param agentRole - Optional agent role for additional context
- * @returns Classification result with type, complexity, and reasoning
+ * @param agentRoleOrOptions - Agent role string (backward compat) or options object
+ * @returns Classification result with type, complexity, reasoning, and classifier model
  */
 export async function classifyTask(
 	task: string,
 	primaryType: TaskType,
 	deps: { listModels: ModelLister; complete: CompleteFn },
-	agentRole?: string
+	agentRoleOrOptions?: string | ClassifyTaskOptions
 ): Promise<ClassificationResult> {
+	const opts: ClassifyTaskOptions =
+		typeof agentRoleOrOptions === "string"
+			? { agentRole: agentRoleOrOptions }
+			: (agentRoleOrOptions ?? {});
+
 	const fallback: ClassificationResult = {
 		type: primaryType,
 		complexity: 3,
 		reasoning: "fallback: classification unavailable",
 	};
 
-	const cheapest = findCheapestModel(deps.listModels);
-	if (!cheapest) return fallback;
+	const model = opts.classifierModel ?? findCheapestModel(deps.listModels);
+	if (!model) return fallback;
 
-	const prompt = buildPrompt(task, primaryType, agentRole);
+	const prompt = buildPrompt(task, primaryType, opts.agentRole);
 
 	try {
-		const output = await deps.complete(cheapest.provider, cheapest.id, prompt);
+		const output = await deps.complete(model.provider, model.id, prompt);
 		const parsed = extractJson(output);
-		if (!parsed) return fallback;
+		if (!parsed) return { ...fallback, classifierModel: model };
 
 		const type = String(parsed.type);
 		const complexity = Number(parsed.complexity);
 		const reasoning = String(parsed.reasoning ?? "");
 
 		if (!VALID_TYPES.has(type) || !VALID_COMPLEXITIES.has(complexity)) {
-			return fallback;
+			return { ...fallback, classifierModel: model };
 		}
 
 		return {
 			type: type as TaskType,
 			complexity: complexity as TaskComplexity,
 			reasoning,
+			classifierModel: model,
 		};
 	} catch {
-		return fallback;
+		return { ...fallback, classifierModel: model };
 	}
 }
