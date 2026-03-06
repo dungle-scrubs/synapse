@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.6...synapse-v0.1.7) (2026-03-06)
+
+
+### Added
+
+* **matrix:** update arena priors and tiers to 2026-03-06 ([694cfd8](https://github.com/dungle-scrubs/synapse/commit/694cfd829950ab83c868b408e3951e47dd3f3bb2))
+* selection observability and classifier model override ([#19](https://github.com/dungle-scrubs/synapse/issues/19)) ([00d9dab](https://github.com/dungle-scrubs/synapse/commit/00d9dab5be88c32b80645d27c768f8cd77d85b04))
+
+
+### Fixed
+
+* ambiguous route keys, signal staleness, classifier tie-breaking ([7f1f9e2](https://github.com/dungle-scrubs/synapse/commit/7f1f9e25ea3e47d9e7a36f16e8af247e217fd9c3))
+
+
+### Changed
+
+* extract shared utilities (isRecord, providerPriority) ([cbd9ca6](https://github.com/dungle-scrubs/synapse/commit/cbd9ca6f4a6ee41ef959d38cc47df008ab36e3e3))
+
+
+### Maintenance
+
+* cover audit gaps (CLI, priors prefix, staleness, agentRole) ([9c1873d](https://github.com/dungle-scrubs/synapse/commit/9c1873d5720bc046f7275501404fbbe3a5300ddb))
+
 ## [0.1.6](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.5...synapse-v0.1.6) (2026-02-25)
 
 
