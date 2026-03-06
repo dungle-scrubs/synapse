@@ -6,6 +6,7 @@
  */
 
 import type { ModelArenaScores, ModelMatrixOverrides, ModelRatings, TaskType } from "./types.js";
+import { isRecord } from "./utils.js";
 
 /**
  * Multi-dimensional model capability matrix.
@@ -147,16 +148,6 @@ export interface SynapseConfig {
 	exclude?: string[];
 	/** Per-model capability matrix overrides. */
 	matrixOverrides?: ModelMatrixOverrides;
-}
-
-/**
- * Checks whether a value is a plain object (non-null, non-array).
- *
- * @param value - Value to test
- * @returns true if the value is a plain object
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

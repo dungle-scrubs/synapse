@@ -11,21 +11,12 @@ import type {
 	RoutingSignalsSnapshot,
 	TaskType,
 } from "./types.js";
+import { isRecord } from "./utils.js";
 
 /** Parsed provider/model route key. */
 export interface RouteSignalKeyParts {
 	readonly modelId: string;
 	readonly provider: string;
-}
-
-/**
- * Check whether an unknown value is a plain object record.
- *
- * @param value - Value to test
- * @returns True when value is a plain object
- */
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -121,8 +112,10 @@ export function buildProviderModelSignalKey(provider: string, modelId: string): 
  * - canonical: `provider/modelId`
  * - legacy: `provider|modelId` (normalized to canonical)
  *
+ * Keys containing both `/` and `|` are rejected as ambiguous.
+ *
  * @param key - Raw route key
- * @returns Parsed route key parts, or undefined when invalid
+ * @returns Parsed route key parts, or undefined when invalid/ambiguous
  */
 export function parseRouteSignalKey(key: string): RouteSignalKeyParts | undefined {
 	const trimmed = key.trim();
@@ -132,8 +125,10 @@ export function parseRouteSignalKey(key: string): RouteSignalKeyParts | undefine
 	const pipeIndex = trimmed.indexOf("|");
 	if (slashIndex === -1 && pipeIndex === -1) return undefined;
 
-	const separatorIndex =
-		slashIndex === -1 ? pipeIndex : pipeIndex === -1 ? slashIndex : Math.min(slashIndex, pipeIndex);
+	// Reject ambiguous keys that mix both separator styles.
+	if (slashIndex !== -1 && pipeIndex !== -1) return undefined;
+
+	const separatorIndex = slashIndex !== -1 ? slashIndex : pipeIndex;
 
 	if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) return undefined;
 

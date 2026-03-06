@@ -8,6 +8,7 @@
 import { getModels, getProviders } from "@mariozechner/pi-ai";
 import { type ModelRatingsLookupOptions, createModelRatingsLookup } from "./matrix.js";
 import type { CandidateModel, ModelRatings, ModelSource, ResolvedModel } from "./types.js";
+import { buildProviderPreferenceMap, providerPriority } from "./utils.js";
 
 /**
  * Collects all models from every registered provider.
@@ -49,19 +50,6 @@ function capabilityScore(
 	const ratings = getRatings(id);
 	if (!ratings) return 0;
 	return Object.values(ratings).reduce((sum, v) => sum + (v ?? 0), 0);
-}
-
-/**
- * Returns the priority index for a provider in the preferred list.
- * Lower = higher priority. Providers not in the list get Infinity.
- *
- * @param provider - Provider name
- * @param preferred - Ordered list of preferred providers
- * @returns Priority index (lower is better)
- */
-function providerPriority(provider: string, preferred: string[]): number {
-	const idx = preferred.indexOf(provider);
-	return idx === -1 ? Number.POSITIVE_INFINITY : idx;
 }
 
 /**
@@ -132,9 +120,10 @@ function pickBest(
 	if (sameModel.length <= 1) return bestModel;
 
 	// Pick by provider preference
+	const prefMap = buildProviderPreferenceMap(preferredProviders);
 	return sameModel.reduce((a, b) => {
-		const aPrio = providerPriority(a.provider, preferredProviders);
-		const bPrio = providerPriority(b.provider, preferredProviders);
+		const aPrio = providerPriority(prefMap, a.provider);
+		const bPrio = providerPriority(prefMap, b.provider);
 		return aPrio <= bPrio ? a : b;
 	});
 }

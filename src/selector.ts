@@ -29,6 +29,7 @@ import type {
 	RoutingSignalsSnapshot,
 	TaskType,
 } from "./types.js";
+import { buildProviderPreferenceMap, providerPriority } from "./utils.js";
 
 /** Model candidate with resolved identity and cost. */
 interface ScoredCandidate {
@@ -144,6 +145,19 @@ export interface SelectionOptions {
 	routingMode?: RoutingMode;
 	/** Optional telemetry snapshot used by score-based modes. */
 	routingSignals?: RoutingSignalsSnapshot;
+	/**
+	 * Maximum age (in milliseconds) for routing signals to be considered valid.
+	 *
+	 * When set, the `routingSignals` snapshot is discarded entirely if
+	 * `Date.now() - generatedAtMs > maxSignalAgeMs`. Individual route/model
+	 * signals inherit the snapshot's age — there is no per-signal staleness check.
+	 *
+	 * Recommended: 300_000 (5 minutes) for latency-sensitive modes,
+	 * 3_600_000 (1 hour) for reliability-focused modes.
+	 *
+	 * When unset, signals are used regardless of age.
+	 */
+	maxSignalAgeMs?: number;
 }
 
 /**
@@ -156,21 +170,6 @@ export interface SelectionOptions {
  */
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
-}
-
-/**
- * Build provider preference lookup map.
- *
- * @param preferredProviders - Ordered preferred provider names
- * @returns Provider name to priority index lookup
- */
-function buildProviderPreferenceMap(preferredProviders?: string[]): Map<string, number> {
-	const prefMap = new Map<string, number>();
-	if (!preferredProviders) return prefMap;
-	for (let i = 0; i < preferredProviders.length; i++) {
-		prefMap.set(preferredProviders[i], i);
-	}
-	return prefMap;
 }
 
 /**
@@ -196,17 +195,6 @@ function isExcluded(provider: string, modelId: string, patterns: string[]): bool
 		}
 	}
 	return false;
-}
-
-/**
- * Resolve provider priority from the preference map.
- *
- * @param prefMap - Provider priority map
- * @param provider - Provider to score
- * @returns Priority index (lower is better)
- */
-function providerPriority(prefMap: ReadonlyMap<string, number>, provider: string): number {
-	return prefMap.get(provider) ?? Number.POSITIVE_INFINITY;
 }
 
 /**
@@ -688,7 +676,13 @@ export function selectModels(
 		).map((candidate) => candidate.resolved);
 	}
 
-	const routingSignals = sanitizeRoutingSignalsSnapshot(options.routingSignals);
+	const rawSignals = sanitizeRoutingSignalsSnapshot(options.routingSignals);
+	const routingSignals =
+		rawSignals && options.maxSignalAgeMs !== undefined
+			? Date.now() - rawSignals.generatedAtMs <= options.maxSignalAgeMs
+				? rawSignals
+				: undefined
+			: rawSignals;
 	const routingModePolicyOverride = sanitizeRoutingModePolicyOverride(
 		options.routingModePolicyOverride
 	);
@@ -705,6 +699,11 @@ export function selectModels(
 	const constrainedCandidates = capableCandidates.filter((candidate) =>
 		passesModeConstraints(candidate, policy, routingSignals)
 	);
+	// Graceful degradation: when every candidate fails hard constraints,
+	// fall back to the full capable set rather than returning empty.
+	// This prevents "reliable" mode from producing zero results when all
+	// providers have transient issues. Callers that need strict enforcement
+	// should check routing signals independently.
 	const scoringPool = constrainedCandidates.length > 0 ? constrainedCandidates : capableCandidates;
 
 	const modeScoredCandidates: ModeScoredCandidate[] = scoringPool.map((candidate) => ({
