@@ -11,6 +11,18 @@ import { isRecord } from "./utils.js";
 /**
  * Multi-dimensional model capability matrix.
  *
+ * This is the **default baseline** — a hand-curated snapshot of public
+ * Arena leaderboard data. It provides reasonable routing in the absence
+ * of user configuration, but is explicitly designed to be overridden:
+ *
+ * - Callers pass `matrixOverrides` in `SelectionOptions` or `SynapseConfig`
+ *   to boost, downgrade, or remove individual models.
+ * - `createModelMatrixOverrideTemplate()` generates a starting config file.
+ * - `parseSynapseConfig()` validates override payloads from JSON/settings.
+ *
+ * When an LLM tool is the caller, it should forward user model preferences
+ * as matrix overrides so the user's intent takes priority over these defaults.
+ *
  * Source: Arena leaderboards (arena.ai/leaderboard/*), updated 2026-03-06.
  *
  * ELO → tier mapping per leaderboard (each has different ELO scale):

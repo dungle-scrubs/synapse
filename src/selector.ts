@@ -39,9 +39,19 @@ interface ScoredCandidate {
 	resolved: ResolvedModel;
 }
 
-/** Candidate decorated with a mode-aware aggregate score. */
+/** Per-dimension component scores and weighted composite. */
+interface ScoreBreakdown {
+	readonly capability: number;
+	readonly cost: number;
+	readonly latency: number;
+	readonly reliability: number;
+	readonly throughput: number;
+	readonly composite: number;
+}
+
+/** Candidate decorated with a full score breakdown. */
 interface ModeScoredCandidate extends ScoredCandidate {
-	score: number;
+	breakdown: ScoreBreakdown;
 }
 
 /** Ratings lookup function type. */
@@ -158,6 +168,64 @@ export interface SelectionOptions {
 	 * When unset, signals are used regardless of age.
 	 */
 	maxSignalAgeMs?: number;
+}
+
+/** Per-candidate scoring details exposed in selection explanations. */
+export interface CandidateScore {
+	/** The resolved model identity. */
+	readonly model: ResolvedModel;
+	/** Weighted composite score, higher is better (mode path only). */
+	readonly compositeScore?: number;
+	/** Per-dimension component scores in [0, 1] (mode path only). */
+	readonly components?: {
+		readonly capability: number;
+		readonly cost: number;
+		readonly latency: number;
+		readonly reliability: number;
+		readonly throughput: number;
+	};
+	/** Matrix capability rating for the classified task type. */
+	readonly taskRating?: number;
+	/** Raw LM Arena ELO score for the classified task type. */
+	readonly arenaScore?: number;
+	/** Effective cost (average of input and output per-token cost). */
+	readonly effectiveCost: number;
+}
+
+/** Summary counts of candidates removed before scoring. */
+export interface FilterSummary {
+	/** Matched an exclusion pattern. */
+	readonly excluded: number;
+	/** No matrix rating for the required task type. */
+	readonly noTaskRating: number;
+	/** Rating below required complexity or task floor. */
+	readonly belowFloor: number;
+	/** Failed hard mode constraints (latency, error rate, uptime). */
+	readonly failedConstraints: number;
+}
+
+/** Full explanation of a model selection decision. */
+export interface SelectionExplanation {
+	/** Which routing logic was used. */
+	readonly path: "legacy" | "mode";
+	/** Active routing mode (mode path only). */
+	readonly routingMode?: RoutingMode;
+	/** Effective policy after merging overrides (mode path only). */
+	readonly effectivePolicy?: RoutingModePolicy;
+	/** Whether routing signals were available and not stale. */
+	readonly signalsApplied: boolean;
+	/** Ranked candidates with scoring details, in final selection order. */
+	readonly rankedScores: readonly CandidateScore[];
+	/** Summary of candidates removed before scoring. */
+	readonly filterSummary: FilterSummary;
+}
+
+/** Selection result including ranked models and full explanation. */
+export interface SelectionResult {
+	/** Ranked models suitable for the task (same as selectModels return). */
+	readonly models: ResolvedModel[];
+	/** Full explanation of the selection decision. */
+	readonly explanation: SelectionExplanation;
 }
 
 /**
@@ -517,20 +585,20 @@ function passesModeConstraints(
 }
 
 /**
- * Compute a weighted routing score for a candidate under a mode policy.
+ * Compute per-dimension component scores and weighted composite for a candidate.
  *
  * @param candidate - Candidate to score
  * @param taskType - Classified task type
  * @param policy - Effective routing mode policy
  * @param signals - Optional telemetry snapshot
- * @returns Aggregate weighted score (higher is better)
+ * @returns Full score breakdown with individual components and composite
  */
 function computeModeScore(
 	candidate: ScoredCandidate,
 	taskType: TaskType,
 	policy: RoutingModePolicy,
 	signals: RoutingSignalsSnapshot | undefined
-): number {
+): ScoreBreakdown {
 	const routeSignal = getRouteSignal(candidate, signals);
 	const modelSignal = getModelSignal(candidate, signals);
 	const taskRating = candidate.ratings[taskType] ?? 0;
@@ -542,13 +610,14 @@ function computeModeScore(
 	const throughput = throughputScore(routeSignal, modelSignal);
 	const cost = costScore(candidate.effectiveCost);
 
-	return (
+	const composite =
 		policy.weights.capability * capability +
 		policy.weights.reliability * reliability +
 		policy.weights.latency * latency +
 		policy.weights.throughput * throughput +
-		policy.weights.cost * cost
-	);
+		policy.weights.cost * cost;
+
+	return { capability, cost, latency, reliability, throughput, composite };
 }
 
 /**
@@ -612,6 +681,247 @@ function modeTieBreakPreference(mode: RoutingMode, fallback: CostPreference): Co
 }
 
 /**
+ * Build a CandidateScore from a legacy-path candidate (no weighted scoring).
+ *
+ * @param candidate - Scored candidate
+ * @param taskType - Classified task type
+ * @returns Candidate score without component breakdown
+ */
+function buildLegacyCandidateScore(candidate: ScoredCandidate, taskType: TaskType): CandidateScore {
+	return {
+		model: candidate.resolved,
+		taskRating: candidate.ratings[taskType],
+		arenaScore: candidate.arenaScores?.[taskType],
+		effectiveCost: candidate.effectiveCost,
+	};
+}
+
+/**
+ * Build a CandidateScore from a mode-path candidate with full breakdown.
+ *
+ * @param candidate - Mode-scored candidate with breakdown
+ * @param taskType - Classified task type
+ * @returns Candidate score with component breakdown
+ */
+function buildModeCandidateScore(
+	candidate: ModeScoredCandidate,
+	taskType: TaskType
+): CandidateScore {
+	return {
+		model: candidate.resolved,
+		compositeScore: candidate.breakdown.composite,
+		components: {
+			capability: candidate.breakdown.capability,
+			cost: candidate.breakdown.cost,
+			latency: candidate.breakdown.latency,
+			reliability: candidate.breakdown.reliability,
+			throughput: candidate.breakdown.throughput,
+		},
+		taskRating: candidate.ratings[taskType],
+		arenaScore: candidate.arenaScores?.[taskType],
+		effectiveCost: candidate.effectiveCost,
+	};
+}
+
+/**
+ * Internal selection implementation that produces both ranked models and
+ * a full explanation of the selection decision.
+ *
+ * @param classification - Task classification result
+ * @param costPreference - Cost preference for sorting
+ * @param options - Selection options
+ * @returns Ranked models with explanation
+ */
+function selectModelsCore(
+	classification: ClassificationResult,
+	costPreference: CostPreference,
+	options: SelectionOptions
+): SelectionResult {
+	const prefMap = buildProviderPreferenceMap(options.preferredProviders);
+	const getRatings = createModelRatingsLookup({ matrixOverrides: options.matrixOverrides });
+	const getArenaPriors = createModelArenaPriorsLookup();
+	const rawCandidates = options.pool
+		? candidatesFromPool(options.pool, getRatings, getArenaPriors)
+		: enumerateCandidates(getRatings, getArenaPriors);
+
+	const excludePatterns = options.exclude?.filter((p) => p.length > 0);
+	const allCandidates =
+		excludePatterns && excludePatterns.length > 0
+			? rawCandidates.filter(
+					(c) => !isExcluded(c.resolved.provider, c.resolved.id, excludePatterns)
+				)
+			: rawCandidates;
+	const excludedCount = rawCandidates.length - allCandidates.length;
+
+	// ── Legacy path (no routing mode) ──────────────────────────────
+	if (!options.routingMode) {
+		let noTaskRating = 0;
+		let belowFloor = 0;
+		const legacyCandidates: ScoredCandidate[] = [];
+
+		for (const candidate of allCandidates) {
+			const rating = candidate.ratings[classification.type];
+			if (rating === undefined) {
+				noTaskRating++;
+				continue;
+			}
+			if (rating < classification.complexity) {
+				belowFloor++;
+				continue;
+			}
+			legacyCandidates.push(candidate);
+		}
+
+		const emptyFilter: FilterSummary = {
+			excluded: excludedCount,
+			noTaskRating,
+			belowFloor,
+			failedConstraints: 0,
+		};
+
+		if (legacyCandidates.length === 0) {
+			return {
+				models: [],
+				explanation: {
+					path: "legacy",
+					signalsApplied: false,
+					rankedScores: [],
+					filterSummary: emptyFilter,
+				},
+			};
+		}
+
+		const sorted = sortLegacy(
+			legacyCandidates,
+			costPreference,
+			classification.type,
+			classification.complexity,
+			prefMap
+		);
+
+		return {
+			models: sorted.map((c) => c.resolved),
+			explanation: {
+				path: "legacy",
+				signalsApplied: false,
+				rankedScores: sorted.map((c) => buildLegacyCandidateScore(c, classification.type)),
+				filterSummary: emptyFilter,
+			},
+		};
+	}
+
+	// ── Mode path (weighted scoring) ───────────────────────────────
+	const rawSignals = sanitizeRoutingSignalsSnapshot(options.routingSignals);
+	const routingSignals =
+		rawSignals && options.maxSignalAgeMs !== undefined
+			? Date.now() - rawSignals.generatedAtMs <= options.maxSignalAgeMs
+				? rawSignals
+				: undefined
+			: rawSignals;
+	const signalsApplied = routingSignals !== undefined;
+
+	const routingModePolicyOverride = sanitizeRoutingModePolicyOverride(
+		options.routingModePolicyOverride
+	);
+	const policy = getEffectiveModePolicy(options.routingMode, routingModePolicyOverride);
+	const effectiveComplexity = clamp(classification.complexity + policy.complexityBias, 1, 5);
+	const taskFloor = Math.max(policy.taskFloors?.[classification.type] ?? 1, effectiveComplexity);
+
+	let noTaskRating = 0;
+	let belowFloor = 0;
+	const capableCandidates: ScoredCandidate[] = [];
+
+	for (const candidate of allCandidates) {
+		const rating = candidate.ratings[classification.type];
+		if (rating === undefined) {
+			noTaskRating++;
+			continue;
+		}
+		if (rating < taskFloor) {
+			belowFloor++;
+			continue;
+		}
+		capableCandidates.push(candidate);
+	}
+
+	if (capableCandidates.length === 0) {
+		return {
+			models: [],
+			explanation: {
+				path: "mode",
+				routingMode: options.routingMode,
+				effectivePolicy: policy,
+				signalsApplied,
+				rankedScores: [],
+				filterSummary: {
+					excluded: excludedCount,
+					noTaskRating,
+					belowFloor,
+					failedConstraints: 0,
+				},
+			},
+		};
+	}
+
+	let failedConstraints = 0;
+	const constrainedCandidates = capableCandidates.filter((candidate) => {
+		if (passesModeConstraints(candidate, policy, routingSignals)) return true;
+		failedConstraints++;
+		return false;
+	});
+
+	// Graceful degradation: when every candidate fails hard constraints,
+	// fall back to the full capable set rather than returning empty.
+	// This prevents "reliable" mode from producing zero results when all
+	// providers have transient issues. Callers that need strict enforcement
+	// should check routing signals independently.
+	const scoringPool = constrainedCandidates.length > 0 ? constrainedCandidates : capableCandidates;
+
+	const modeScoredCandidates: ModeScoredCandidate[] = scoringPool.map((candidate) => ({
+		...candidate,
+		breakdown: computeModeScore(candidate, classification.type, policy, routingSignals),
+	}));
+
+	const tieBreakPreference = modeTieBreakPreference(options.routingMode, costPreference);
+
+	modeScoredCandidates.sort((a, b) => {
+		const scoreDiff = b.breakdown.composite - a.breakdown.composite;
+		if (scoreDiff !== 0) return scoreDiff;
+
+		const providerDiff =
+			providerPriority(prefMap, a.resolved.provider) -
+			providerPriority(prefMap, b.resolved.provider);
+		if (providerDiff !== 0) return providerDiff;
+
+		if (tieBreakPreference === "premium") {
+			const costDiff = b.effectiveCost - a.effectiveCost;
+			if (costDiff !== 0) return costDiff;
+		} else {
+			const costDiff = a.effectiveCost - b.effectiveCost;
+			if (costDiff !== 0) return costDiff;
+		}
+
+		const providerNameDiff = a.resolved.provider.localeCompare(b.resolved.provider);
+		if (providerNameDiff !== 0) return providerNameDiff;
+		return a.resolved.id.localeCompare(b.resolved.id);
+	});
+
+	return {
+		models: modeScoredCandidates.map((c) => c.resolved),
+		explanation: {
+			path: "mode",
+			routingMode: options.routingMode,
+			effectivePolicy: policy,
+			signalsApplied,
+			rankedScores: modeScoredCandidates.map((c) =>
+				buildModeCandidateScore(c, classification.type)
+			),
+			filterSummary: { excluded: excludedCount, noTaskRating, belowFloor, failedConstraints },
+		},
+	};
+}
+
+/**
  * Select models for a classified task, ranked by preference.
  *
  * Legacy path (default):
@@ -641,99 +951,28 @@ export function selectModels(
 	costPreference: CostPreference,
 	poolOrOptions?: ResolvedModel[] | SelectionOptions
 ): ResolvedModel[] {
-	// Normalize legacy pool array to options object.
 	const options: SelectionOptions = Array.isArray(poolOrOptions)
 		? { pool: poolOrOptions }
 		: (poolOrOptions ?? {});
+	return selectModelsCore(classification, costPreference, options).models;
+}
 
-	const prefMap = buildProviderPreferenceMap(options.preferredProviders);
-	const getRatings = createModelRatingsLookup({ matrixOverrides: options.matrixOverrides });
-	const getArenaPriors = createModelArenaPriorsLookup();
-	const rawCandidates = options.pool
-		? candidatesFromPool(options.pool, getRatings, getArenaPriors)
-		: enumerateCandidates(getRatings, getArenaPriors);
-
-	const excludePatterns = options.exclude?.filter((p) => p.length > 0);
-	const allCandidates =
-		excludePatterns && excludePatterns.length > 0
-			? rawCandidates.filter(
-					(c) => !isExcluded(c.resolved.provider, c.resolved.id, excludePatterns)
-				)
-			: rawCandidates;
-
-	if (!options.routingMode) {
-		const legacyCandidates = allCandidates.filter((candidate) => {
-			const rating = candidate.ratings[classification.type];
-			return rating !== undefined && rating >= classification.complexity;
-		});
-		if (legacyCandidates.length === 0) return [];
-		return sortLegacy(
-			legacyCandidates,
-			costPreference,
-			classification.type,
-			classification.complexity,
-			prefMap
-		).map((candidate) => candidate.resolved);
-	}
-
-	const rawSignals = sanitizeRoutingSignalsSnapshot(options.routingSignals);
-	const routingSignals =
-		rawSignals && options.maxSignalAgeMs !== undefined
-			? Date.now() - rawSignals.generatedAtMs <= options.maxSignalAgeMs
-				? rawSignals
-				: undefined
-			: rawSignals;
-	const routingModePolicyOverride = sanitizeRoutingModePolicyOverride(
-		options.routingModePolicyOverride
-	);
-	const policy = getEffectiveModePolicy(options.routingMode, routingModePolicyOverride);
-	const effectiveComplexity = clamp(classification.complexity + policy.complexityBias, 1, 5);
-	const taskFloor = Math.max(policy.taskFloors?.[classification.type] ?? 1, effectiveComplexity);
-
-	const capableCandidates = allCandidates.filter((candidate) => {
-		const rating = candidate.ratings[classification.type];
-		return rating !== undefined && rating >= taskFloor;
-	});
-	if (capableCandidates.length === 0) return [];
-
-	const constrainedCandidates = capableCandidates.filter((candidate) =>
-		passesModeConstraints(candidate, policy, routingSignals)
-	);
-	// Graceful degradation: when every candidate fails hard constraints,
-	// fall back to the full capable set rather than returning empty.
-	// This prevents "reliable" mode from producing zero results when all
-	// providers have transient issues. Callers that need strict enforcement
-	// should check routing signals independently.
-	const scoringPool = constrainedCandidates.length > 0 ? constrainedCandidates : capableCandidates;
-
-	const modeScoredCandidates: ModeScoredCandidate[] = scoringPool.map((candidate) => ({
-		...candidate,
-		score: computeModeScore(candidate, classification.type, policy, routingSignals),
-	}));
-
-	const tieBreakPreference = modeTieBreakPreference(options.routingMode, costPreference);
-
-	modeScoredCandidates.sort((a, b) => {
-		const scoreDiff = b.score - a.score;
-		if (scoreDiff !== 0) return scoreDiff;
-
-		const providerDiff =
-			providerPriority(prefMap, a.resolved.provider) -
-			providerPriority(prefMap, b.resolved.provider);
-		if (providerDiff !== 0) return providerDiff;
-
-		if (tieBreakPreference === "premium") {
-			const costDiff = b.effectiveCost - a.effectiveCost;
-			if (costDiff !== 0) return costDiff;
-		} else {
-			const costDiff = a.effectiveCost - b.effectiveCost;
-			if (costDiff !== 0) return costDiff;
-		}
-
-		const providerNameDiff = a.resolved.provider.localeCompare(b.resolved.provider);
-		if (providerNameDiff !== 0) return providerNameDiff;
-		return a.resolved.id.localeCompare(b.resolved.id);
-	});
-
-	return modeScoredCandidates.map((candidate) => candidate.resolved);
+/**
+ * Select models with a full explanation of the selection decision.
+ *
+ * Same algorithm as `selectModels`, but returns per-candidate scoring
+ * breakdowns, filter summaries, and the effective policy — giving callers
+ * full observability into why each model was ranked where it was.
+ *
+ * @param classification - Task classification result
+ * @param costPreference - Cost preference for sorting
+ * @param options - Selection options (does not accept legacy pool array)
+ * @returns Ranked models and detailed explanation
+ */
+export function selectModelsExplained(
+	classification: ClassificationResult,
+	costPreference: CostPreference,
+	options?: SelectionOptions
+): SelectionResult {
+	return selectModelsCore(classification, costPreference, options ?? {});
 }

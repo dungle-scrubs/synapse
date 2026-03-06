@@ -64,11 +64,22 @@ export { listAvailableModels, resolveModelCandidates, resolveModelFuzzy } from "
 
 // Classifier
 export { classifyTask, findCheapestModel } from "./classifier.js";
-export type { ClassifierModel, CompleteFn, ModelLister } from "./classifier.js";
+export type {
+	ClassifierModel,
+	ClassifyTaskOptions,
+	CompleteFn,
+	ModelLister,
+} from "./classifier.js";
 
 // Selector
-export { selectModels } from "./selector.js";
-export type { SelectionOptions } from "./selector.js";
+export { selectModels, selectModelsExplained } from "./selector.js";
+export type {
+	CandidateScore,
+	FilterSummary,
+	SelectionExplanation,
+	SelectionOptions,
+	SelectionResult,
+} from "./selector.js";
 
 // Utilities
 export { buildProviderPreferenceMap, isRecord, providerPriority } from "./utils.js";

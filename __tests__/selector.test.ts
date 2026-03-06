@@ -67,7 +67,7 @@ mock.module("@mariozechner/pi-ai", () => ({
 	},
 }));
 
-const { selectModels } = await import("../src/selector.js");
+const { selectModels, selectModelsExplained } = await import("../src/selector.js");
 
 describe("selectModels", () => {
 	it("eco: ranks cheapest models first", () => {
@@ -432,5 +432,181 @@ describe("selectModels — routing modes", () => {
 		expect(withoutStaleness.map((m) => `${m.provider}/${m.id}`)).not.toContain(
 			"google/gemini-3-flash"
 		);
+	});
+});
+
+describe("selectModelsExplained — legacy path", () => {
+	it("returns explanation with path=legacy and filter summary", () => {
+		const result = selectModelsExplained({ type: "code", complexity: 4, reasoning: "test" }, "eco");
+		expect(result.explanation.path).toBe("legacy");
+		expect(result.explanation.signalsApplied).toBe(false);
+		expect(result.explanation.routingMode).toBeUndefined();
+		expect(result.explanation.effectivePolicy).toBeUndefined();
+		expect(result.models.length).toBeGreaterThan(0);
+		expect(result.explanation.rankedScores.length).toBe(result.models.length);
+		// haiku (code:3) should be filtered as belowFloor
+		expect(result.explanation.filterSummary.belowFloor).toBeGreaterThan(0);
+		expect(result.explanation.filterSummary.failedConstraints).toBe(0);
+	});
+
+	it("rankedScores have taskRating, effectiveCost, and no components", () => {
+		const result = selectModelsExplained({ type: "code", complexity: 3, reasoning: "test" }, "eco");
+		for (const score of result.explanation.rankedScores) {
+			expect(score.taskRating).toBeDefined();
+			expect(score.effectiveCost).toBeGreaterThanOrEqual(0);
+			expect(score.components).toBeUndefined();
+			expect(score.compositeScore).toBeUndefined();
+		}
+	});
+
+	it("models array matches selectModels output", () => {
+		const classification = { type: "code" as const, complexity: 3 as const, reasoning: "test" };
+		const explained = selectModelsExplained(classification, "balanced");
+		const simple = selectModels(classification, "balanced");
+		expect(explained.models.map((m) => `${m.provider}/${m.id}`)).toEqual(
+			simple.map((m) => `${m.provider}/${m.id}`)
+		);
+	});
+
+	it("tracks excluded count in filter summary", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{ exclude: ["openai"] }
+		);
+		// "openai" prefix excludes openai and openai-codex providers
+		expect(result.explanation.filterSummary.excluded).toBeGreaterThan(0);
+	});
+
+	it("returns empty rankedScores when no candidates match", () => {
+		const result = selectModelsExplained({ type: "code", complexity: 6, reasoning: "test" }, "eco");
+		expect(result.models).toEqual([]);
+		expect(result.explanation.rankedScores).toEqual([]);
+		expect(result.explanation.filterSummary.belowFloor).toBeGreaterThan(0);
+	});
+
+	it("tracks noTaskRating for models missing the required task type", () => {
+		// Override gpt-5.1 to remove vision, so the 3 providers serving it get filtered
+		const result = selectModelsExplained(
+			{ type: "vision", complexity: 1, reasoning: "test" },
+			"eco",
+			{ matrixOverrides: { "gpt-5.1": { code: 3, text: 4 } } }
+		);
+		expect(result.explanation.filterSummary.noTaskRating).toBeGreaterThan(0);
+	});
+});
+
+describe("selectModelsExplained — mode path", () => {
+	it("returns explanation with path=mode and component scores", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{ routingMode: "balanced" }
+		);
+		expect(result.explanation.path).toBe("mode");
+		expect(result.explanation.routingMode).toBe("balanced");
+		expect(result.explanation.effectivePolicy).toBeDefined();
+		expect(result.explanation.effectivePolicy?.weights).toBeDefined();
+		expect(result.models.length).toBeGreaterThan(0);
+
+		for (const score of result.explanation.rankedScores) {
+			expect(score.compositeScore).toBeDefined();
+			expect(typeof score.compositeScore).toBe("number");
+			expect(score.components).toBeDefined();
+			expect(score.components?.capability).toBeGreaterThanOrEqual(0);
+			expect(score.components?.capability).toBeLessThanOrEqual(1);
+			expect(score.components?.cost).toBeGreaterThanOrEqual(0);
+			expect(score.components?.cost).toBeLessThanOrEqual(1);
+		}
+	});
+
+	it("rankedScores are in descending composite score order", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{ routingMode: "quality" }
+		);
+		const scores = result.explanation.rankedScores.map((s) => s.compositeScore ?? 0);
+		for (let i = 1; i < scores.length; i++) {
+			expect(scores[i]).toBeLessThanOrEqual(scores[i - 1]);
+		}
+	});
+
+	it("signals applied is true when fresh signals provided", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "fast",
+				routingSignals: {
+					generatedAtMs: Date.now(),
+					routes: {
+						"anthropic/claude-opus-4-6": { latencyP90Ms: 3000, observedAtMs: Date.now() },
+					},
+				},
+			}
+		);
+		expect(result.explanation.signalsApplied).toBe(true);
+	});
+
+	it("signals applied is false when signals are stale", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "fast",
+				maxSignalAgeMs: 300_000,
+				routingSignals: {
+					generatedAtMs: Date.now() - 600_000,
+					routes: {},
+				},
+			}
+		);
+		expect(result.explanation.signalsApplied).toBe(false);
+	});
+
+	it("tracks failedConstraints count", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "reliable",
+				routingSignals: {
+					generatedAtMs: Date.now(),
+					routes: {
+						"google/gemini-3-flash": { uptime: 0.82, observedAtMs: Date.now() },
+					},
+				},
+			}
+		);
+		expect(result.explanation.filterSummary.failedConstraints).toBeGreaterThan(0);
+	});
+
+	it("effective policy reflects overrides", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "balanced",
+				routingModePolicyOverride: {
+					weights: { capability: 0.9 },
+				},
+			}
+		);
+		expect(result.explanation.effectivePolicy?.weights.capability).toBe(0.9);
+		// Other weights remain from the base balanced policy
+		expect(result.explanation.effectivePolicy?.weights.cost).toBe(0.05);
+	});
+
+	it("arena scores appear in candidate scores when available", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{ routingMode: "balanced" }
+		);
+		const opusScore = result.explanation.rankedScores.find((s) => s.model.id === "claude-opus-4-6");
+		expect(opusScore).toBeDefined();
+		expect(opusScore?.arenaScore).toBeDefined();
+		expect(typeof opusScore?.arenaScore).toBe("number");
 	});
 });

@@ -116,4 +116,122 @@ describe("classifyTask", () => {
 		const result = findCheapestModel(() => tiedModels);
 		expect(result).toEqual({ provider: "alpha", id: "model-a" });
 	});
+
+	it("sets classifierModel on successful classification", async () => {
+		const result = await classifyTask("Refactor the auth module", "code", deps);
+		expect(result.classifierModel).toEqual({ provider: "openai", id: "gpt-cheap" });
+	});
+
+	it("sets classifierModel on fallback (parse failure)", async () => {
+		const badComplete: CompleteFn = async () => "not json at all";
+		const result = await classifyTask("Something", "code", {
+			listModels,
+			complete: badComplete,
+		});
+		expect(result.classifierModel).toEqual({ provider: "openai", id: "gpt-cheap" });
+		expect(result.reasoning).toContain("fallback");
+	});
+
+	it("sets classifierModel on fallback (network error)", async () => {
+		const failDeps = {
+			listModels,
+			complete: async () => {
+				throw new Error("network error");
+			},
+		};
+		const result = await classifyTask("Something", "code", failDeps);
+		expect(result.classifierModel).toEqual({ provider: "openai", id: "gpt-cheap" });
+	});
+});
+
+describe("classifyTask — classifierModel override", () => {
+	it("uses the specified classifier model instead of cheapest", async () => {
+		let capturedProvider = "";
+		let capturedModel = "";
+		const capturingComplete: CompleteFn = async (provider, modelId) => {
+			capturedProvider = provider;
+			capturedModel = modelId;
+			return '{"type": "code", "complexity": 3, "reasoning": "test"}';
+		};
+		const result = await classifyTask(
+			"Fix a bug",
+			"code",
+			{
+				listModels,
+				complete: capturingComplete,
+			},
+			{
+				classifierModel: { provider: "openai", id: "gpt-expensive" },
+			}
+		);
+		expect(capturedProvider).toBe("openai");
+		expect(capturedModel).toBe("gpt-expensive");
+		expect(result.classifierModel).toEqual({ provider: "openai", id: "gpt-expensive" });
+	});
+
+	it("classifierModel works even when listModels returns empty", async () => {
+		const emptyListModels: ModelLister = () => [];
+		let capturedModel = "";
+		const capturingComplete: CompleteFn = async (_p, modelId) => {
+			capturedModel = modelId;
+			return '{"type": "text", "complexity": 2, "reasoning": "simple task"}';
+		};
+		const result = await classifyTask(
+			"Write a doc",
+			"text",
+			{
+				listModels: emptyListModels,
+				complete: capturingComplete,
+			},
+			{
+				classifierModel: { provider: "anthropic", id: "claude-haiku" },
+			}
+		);
+		expect(capturedModel).toBe("claude-haiku");
+		expect(result.type).toBe("text");
+		expect(result.complexity).toBe(2);
+		expect(result.classifierModel).toEqual({ provider: "anthropic", id: "claude-haiku" });
+	});
+
+	it("backward compat: string agentRole still works", async () => {
+		let capturedPrompt = "";
+		const capturingComplete: CompleteFn = async (_p, _m, prompt) => {
+			capturedPrompt = prompt;
+			return '{"type": "code", "complexity": 3, "reasoning": "test"}';
+		};
+		await classifyTask(
+			"Fix a bug",
+			"code",
+			{
+				listModels,
+				complete: capturingComplete,
+			},
+			"security auditor"
+		);
+		expect(capturedPrompt).toContain("security auditor");
+	});
+
+	it("options object supports agentRole alongside classifierModel", async () => {
+		let capturedPrompt = "";
+		let capturedModel = "";
+		const capturingComplete: CompleteFn = async (_p, modelId, prompt) => {
+			capturedPrompt = prompt;
+			capturedModel = modelId;
+			return '{"type": "code", "complexity": 4, "reasoning": "complex"}';
+		};
+		await classifyTask(
+			"Audit the auth system",
+			"code",
+			{
+				listModels,
+				complete: capturingComplete,
+			},
+			{
+				agentRole: "security auditor",
+				classifierModel: { provider: "openai", id: "gpt-expensive" },
+			}
+		);
+		expect(capturedPrompt).toContain("security auditor");
+		expect(capturedModel).toBe("gpt-expensive");
+	});
 });

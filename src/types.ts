@@ -88,6 +88,8 @@ export interface ClassificationResult {
 	type: TaskType;
 	complexity: TaskComplexity;
 	reasoning: string;
+	/** Model used for classification (set by classifyTask). */
+	classifierModel?: { provider: string; id: string };
 }
 
 /** A resolved model with provider and display name. */
