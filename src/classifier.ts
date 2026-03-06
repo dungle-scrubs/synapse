@@ -30,6 +30,9 @@ export type CompleteFn = (provider: string, modelId: string, prompt: string) => 
 /**
  * Finds the cheapest available model by effective cost.
  *
+ * When multiple models share the same lowest cost, the winner is
+ * deterministic: sorted by `provider` then `id` lexicographically.
+ *
  * @param listModels - Function that returns all available models
  * @returns Provider and ID of the cheapest model, or undefined if none available
  */
@@ -44,6 +47,13 @@ export function findCheapestModel(
 		if (effective < cheapestCost) {
 			cheapestCost = effective;
 			cheapest = { provider: m.provider, id: m.id };
+		} else if (effective === cheapestCost && cheapest) {
+			// Deterministic tie-break: provider then id, lexicographic ascending.
+			const key = `${m.provider}/${m.id}`;
+			const cheapestKey = `${cheapest.provider}/${cheapest.id}`;
+			if (key < cheapestKey) {
+				cheapest = { provider: m.provider, id: m.id };
+			}
 		}
 	}
 
