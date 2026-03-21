@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.8...synapse-v0.1.9) (2026-03-21)
+
+
+### Maintenance
+
+* add workflow_dispatch to release for manual publish retries ([d368892](https://github.com/dungle-scrubs/synapse/commit/d368892532ca9d85feb0fb8b5ef3b11e0fe9a567))
+* trigger release workflow ([876fa04](https://github.com/dungle-scrubs/synapse/commit/876fa04c8af447e86df0919106a0288f01ae47e8))
+
 ## [0.1.8](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.7...synapse-v0.1.8) (2026-03-21)
 
 
