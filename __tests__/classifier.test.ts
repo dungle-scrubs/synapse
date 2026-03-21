@@ -81,6 +81,29 @@ describe("classifyTask", () => {
 		expect(result.complexity).toBe(2);
 	});
 
+	it("extracts JSON embedded in surrounding text via regex fallback", async () => {
+		const embeddedComplete: CompleteFn = async () =>
+			'Sure, here is the classification:\n{"type": "code", "complexity": 5, "reasoning": "Cross-system design"}\nHope that helps!';
+		const result = await classifyTask("Design the auth system", "code", {
+			listModels,
+			complete: embeddedComplete,
+		});
+		expect(result.type).toBe("code");
+		expect(result.complexity).toBe(5);
+		expect(result.reasoning).toBe("Cross-system design");
+	});
+
+	it("returns fallback when response contains no extractable JSON", async () => {
+		const noJsonComplete: CompleteFn = async () => "This is just plain text with no JSON at all";
+		const result = await classifyTask("Something", "text", {
+			listModels,
+			complete: noJsonComplete,
+		});
+		expect(result.type).toBe("text");
+		expect(result.complexity).toBe(3);
+		expect(result.reasoning).toContain("fallback");
+	});
+
 	it("returns fallback for invalid type in response", async () => {
 		const badComplete: CompleteFn = async () =>
 			'{"type": "invalid", "complexity": 3, "reasoning": "bad"}';

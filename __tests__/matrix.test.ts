@@ -263,6 +263,67 @@ describe("modelSupportsTask", () => {
 	});
 });
 
+describe("getModelRatings — mutation safety", () => {
+	it("returns a defensive copy that cannot corrupt the base matrix", () => {
+		const first = getModelRatings("claude-opus-4-6");
+		if (!first) throw new Error("expected ratings");
+		first.code = 1;
+
+		const second = getModelRatings("claude-opus-4-6");
+		expect(second?.code).toBe(5); // must NOT be corrupted
+	});
+
+	it("successive calls return independent copies", () => {
+		const a = getModelRatings("gemini-3-pro");
+		const b = getModelRatings("gemini-3-pro");
+		expect(a).toEqual(b);
+		expect(a).not.toBe(b); // different object references
+	});
+
+	it("returns a defensive copy when overrides are applied", () => {
+		const overrides = { "claude-opus-4-6": { code: 3 as const, text: 3 as const } };
+		const first = getModelRatings("claude-opus-4-6", { matrixOverrides: overrides });
+		if (!first) throw new Error("expected ratings");
+		first.code = 1;
+
+		const second = getModelRatings("claude-opus-4-6", { matrixOverrides: overrides });
+		expect(second?.code).toBe(3); // must NOT be corrupted
+	});
+});
+
+describe("MODEL_MATRIX immutability", () => {
+	it("MODEL_MATRIX is deeply frozen at runtime", () => {
+		expect(Object.isFrozen(MODEL_MATRIX)).toBe(true);
+		for (const ratings of Object.values(MODEL_MATRIX)) {
+			expect(Object.isFrozen(ratings)).toBe(true);
+		}
+	});
+
+	it("MODEL_ARENA_PRIORS is deeply frozen at runtime", () => {
+		expect(Object.isFrozen(MODEL_ARENA_PRIORS)).toBe(true);
+		for (const scores of Object.values(MODEL_ARENA_PRIORS)) {
+			expect(Object.isFrozen(scores)).toBe(true);
+		}
+	});
+
+	it("mutations throw in strict mode", () => {
+		expect(() => {
+			(MODEL_MATRIX as Record<string, unknown>)["claude-opus-4-6"] = { code: 1 };
+		}).toThrow();
+	});
+});
+
+describe("getModelArenaPriors — mutation safety", () => {
+	it("returns a defensive copy", () => {
+		const first = getModelArenaPriors("gemini-3-pro");
+		expect(first).toBeDefined();
+		(first as Record<string, unknown>).code = 0;
+
+		const second = getModelArenaPriors("gemini-3-pro");
+		expect(second?.code).toBe(1437); // must NOT be corrupted
+	});
+});
+
 describe("MODEL_ARENA_PRIORS completeness", () => {
 	it("all prior scores are positive", () => {
 		for (const [_modelId, priors] of Object.entries(MODEL_ARENA_PRIORS)) {

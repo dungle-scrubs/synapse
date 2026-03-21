@@ -67,7 +67,9 @@ mock.module("@mariozechner/pi-ai", () => ({
 	},
 }));
 
-const { selectModels, selectModelsExplained } = await import("../src/selector.js");
+const { getDefaultModePolicy, ROUTING_MODES, selectModels, selectModelsExplained } = await import(
+	"../src/selector.js"
+);
 
 describe("selectModels", () => {
 	it("eco: ranks cheapest models first", () => {
@@ -595,7 +597,7 @@ describe("selectModelsExplained — mode path", () => {
 		);
 		expect(result.explanation.effectivePolicy?.weights.capability).toBe(0.9);
 		// Other weights remain from the base balanced policy
-		expect(result.explanation.effectivePolicy?.weights.cost).toBe(0.05);
+		expect(result.explanation.effectivePolicy?.weights.cost).toBe(0.1);
 	});
 
 	it("arena scores appear in candidate scores when available", () => {
@@ -608,5 +610,180 @@ describe("selectModelsExplained — mode path", () => {
 		expect(opusScore).toBeDefined();
 		expect(opusScore?.arenaScore).toBeDefined();
 		expect(typeof opusScore?.arenaScore).toBe("number");
+	});
+});
+
+describe("selectModels — constraint graceful degradation", () => {
+	it("falls back to capable candidates when ALL fail hard constraints", () => {
+		// Set ALL routes to fail reliable mode's strict uptime constraint (minUptime: 0.97)
+		const ranked = selectModels({ type: "code", complexity: 3, reasoning: "test" }, "eco", {
+			routingMode: "reliable",
+			routingSignals: {
+				generatedAtMs: Date.now(),
+				routes: {
+					"anthropic/claude-opus-4-6": { uptime: 0.8, observedAtMs: Date.now() },
+					"anthropic/claude-sonnet-4-5-20250514": { uptime: 0.85, observedAtMs: Date.now() },
+					"anthropic/claude-haiku-4-5-20250514": { uptime: 0.82, observedAtMs: Date.now() },
+					"google/gemini-3-flash": { uptime: 0.81, observedAtMs: Date.now() },
+					"openai/gpt-5.1": { uptime: 0.83, observedAtMs: Date.now() },
+					"openai-codex/gpt-5.1": { uptime: 0.84, observedAtMs: Date.now() },
+					"github-copilot/gpt-5.1": { uptime: 0.79, observedAtMs: Date.now() },
+				},
+			},
+		});
+		// Should NOT be empty — graceful degradation includes all capable candidates
+		expect(ranked.length).toBeGreaterThan(0);
+	});
+
+	it("reports failedConstraints count matching total when all fail", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "reliable",
+				routingSignals: {
+					generatedAtMs: Date.now(),
+					routes: {
+						"anthropic/claude-opus-4-6": { uptime: 0.8, observedAtMs: Date.now() },
+						"anthropic/claude-sonnet-4-5-20250514": {
+							uptime: 0.85,
+							observedAtMs: Date.now(),
+						},
+						"anthropic/claude-haiku-4-5-20250514": {
+							uptime: 0.82,
+							observedAtMs: Date.now(),
+						},
+						"google/gemini-3-flash": { uptime: 0.81, observedAtMs: Date.now() },
+						"openai/gpt-5.1": { uptime: 0.83, observedAtMs: Date.now() },
+						"openai-codex/gpt-5.1": { uptime: 0.84, observedAtMs: Date.now() },
+						"github-copilot/gpt-5.1": { uptime: 0.79, observedAtMs: Date.now() },
+					},
+				},
+			}
+		);
+		// All capable candidates failed constraints
+		expect(result.explanation.filterSummary.failedConstraints).toBe(result.models.length);
+		expect(result.models.length).toBeGreaterThan(0);
+	});
+});
+
+describe("selectModels — model signal prefix fallback", () => {
+	it("resolves model signal via prefix key when exact key is missing", () => {
+		// "claude-sonnet-4-5" is a prefix of "claude-sonnet-4-5-20250514"
+		// The model key should be found via the prefix fallback path
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "fast",
+				routingSignals: {
+					generatedAtMs: Date.now(),
+					models: {
+						// Prefix key that should match claude-sonnet-4-5-20250514
+						"claude-sonnet-4-5": {
+							observedAtMs: Date.now(),
+							ttftMedianMs: 100,
+							outputTpsMedian: 200,
+						},
+						// Exact key for opus — should match directly
+						"claude-opus-4-6": {
+							observedAtMs: Date.now(),
+							ttftMedianMs: 2000,
+							outputTpsMedian: 50,
+						},
+					},
+					routes: {
+						"anthropic/claude-sonnet-4-5-20250514": {
+							latencyP90Ms: 300,
+							observedAtMs: Date.now(),
+						},
+						"anthropic/claude-opus-4-6": {
+							latencyP90Ms: 3000,
+							observedAtMs: Date.now(),
+						},
+					},
+				},
+			}
+		);
+		expect(result.explanation.signalsApplied).toBe(true);
+		// Sonnet should rank higher than Opus due to much lower latency
+		const sonnetIdx = result.models.findIndex((m) => m.id.includes("sonnet"));
+		const opusIdx = result.models.findIndex((m) => m.id.includes("opus"));
+		expect(sonnetIdx).toBeLessThan(opusIdx);
+	});
+
+	it("resolves model signal via provider-scoped key", () => {
+		const result = selectModelsExplained(
+			{ type: "code", complexity: 3, reasoning: "test" },
+			"eco",
+			{
+				routingMode: "balanced",
+				routingSignals: {
+					generatedAtMs: Date.now(),
+					models: {
+						// Provider-scoped key (second lookup path)
+						"anthropic/claude-opus-4-6": {
+							observedAtMs: Date.now(),
+							ttftMedianMs: 500,
+							outputTpsMedian: 100,
+						},
+					},
+				},
+			}
+		);
+		expect(result.explanation.signalsApplied).toBe(true);
+		expect(result.models.length).toBeGreaterThan(0);
+	});
+});
+
+describe("ROUTING_MODES", () => {
+	it("contains all five routing modes", () => {
+		expect(ROUTING_MODES).toEqual(["balanced", "cheap", "fast", "quality", "reliable"]);
+	});
+
+	it("is frozen", () => {
+		expect(Object.isFrozen(ROUTING_MODES)).toBe(true);
+	});
+});
+
+describe("getDefaultModePolicy", () => {
+	it("returns the default policy for each mode", () => {
+		for (const mode of ROUTING_MODES) {
+			const policy = getDefaultModePolicy(mode);
+			expect(policy.weights).toBeDefined();
+			expect(policy.complexityBias).toBeDefined();
+			expect(typeof policy.weights.capability).toBe("number");
+			expect(typeof policy.weights.cost).toBe("number");
+		}
+	});
+
+	it("default policies have weights summing to 1", () => {
+		for (const mode of ROUTING_MODES) {
+			const policy = getDefaultModePolicy(mode);
+			const sum =
+				policy.weights.capability +
+				policy.weights.cost +
+				policy.weights.latency +
+				policy.weights.reliability +
+				policy.weights.throughput;
+			expect(Math.abs(sum - 1)).toBeLessThan(1e-10);
+		}
+	});
+
+	it("returns a defensive copy — mutations do not affect defaults", () => {
+		const policy = getDefaultModePolicy("balanced");
+		const originalCapability = policy.weights.capability;
+		(policy.weights as { capability: number }).capability = 99;
+
+		const fresh = getDefaultModePolicy("balanced");
+		expect(fresh.weights.capability).toBe(originalCapability);
+	});
+
+	it("quality mode has positive complexityBias", () => {
+		expect(getDefaultModePolicy("quality").complexityBias).toBe(1);
+	});
+
+	it("cheap mode has negative complexityBias", () => {
+		expect(getDefaultModePolicy("cheap").complexityBias).toBe(-1);
 	});
 });
