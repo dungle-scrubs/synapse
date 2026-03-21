@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.7...synapse-v0.1.8) (2026-03-21)
+
+
+### Fixed
+
+* immutable matrix, defensive copies, routing API, and full test coverage ([#24](https://github.com/dungle-scrubs/synapse/issues/24)) ([b6bc3d5](https://github.com/dungle-scrubs/synapse/commit/b6bc3d55316a8874ca9107cec553499728003e77))
+
 ## [0.1.7](https://github.com/dungle-scrubs/synapse/compare/synapse-v0.1.6...synapse-v0.1.7) (2026-03-06)
 
 
