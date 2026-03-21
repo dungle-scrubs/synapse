@@ -23,7 +23,7 @@ import { isRecord } from "./utils.js";
  * When an LLM tool is the caller, it should forward user model preferences
  * as matrix overrides so the user's intent takes priority over these defaults.
  *
- * Source: Arena leaderboards (arena.ai/leaderboard/*), updated 2026-03-06.
+ * Source: Arena leaderboards (arena.ai/leaderboard/*), updated 2026-03-21.
  *
  * ELO → tier mapping per leaderboard (each has different ELO scale):
  *   Code:   5=≥1440  4=1370-1439  3=1280-1369  2=1180-1279  1=<1180
@@ -32,12 +32,12 @@ import { isRecord } from "./utils.js";
  *
  * Ratings use base model scores when available — no thinking, default effort.
  */
-export const MODEL_MATRIX: Record<string, ModelRatings> = {
+export const MODEL_MATRIX: Readonly<Record<string, Readonly<ModelRatings>>> = {
 	// Anthropic
 	"claude-opus-4-6": { code: 5, vision: 3, text: 5 },
 	"claude-opus-4-5": { code: 5, vision: 3, text: 5 },
 	"claude-opus-4-1": { code: 4, vision: 3, text: 4 },
-	"claude-sonnet-4-6": { code: 5, vision: 3, text: 4 },
+	"claude-sonnet-4-6": { code: 5, vision: 3, text: 5 },
 	"claude-sonnet-4-5": { code: 4, vision: 3, text: 4 },
 	"claude-haiku-4-5": { code: 3, vision: 2, text: 3 },
 	// OpenAI
@@ -86,40 +86,59 @@ export const MODEL_MATRIX: Record<string, ModelRatings> = {
  * These do not replace matrix tiers. They only add granularity when selecting
  * among models that already pass tier filters.
  */
-export const MODEL_ARENA_PRIORS: Record<string, ModelArenaScores> = {
-	"claude-opus-4-6": { code: 1555, text: 1504 },
-	"claude-opus-4-5": { code: 1475, text: 1467 },
-	"claude-opus-4-1": { code: 1389, text: 1446 },
-	"claude-sonnet-4-6": { code: 1523, text: 1459 },
-	"claude-sonnet-4-5": { code: 1386, text: 1450 },
-	"claude-haiku-4-5": { code: 1307, text: 1405 },
-	"gpt-5.2": { code: 1396, vision: 1233, text: 1438 },
-	"gpt-5": { code: 1394, vision: 1225 },
-	"gpt-5.1": { code: 1343, vision: 1240, text: 1437 },
-	"gpt-5.2-codex": { code: 1336 },
-	"gpt-5.1-codex": { code: 1329 },
-	"gpt-5.1-codex-mini": { code: 1243 },
-	"gemini-3-pro": { code: 1442, vision: 1288, text: 1485 },
-	"gemini-3-flash": { code: 1442, vision: 1276, text: 1473 },
-	"gemini-2.5-pro": { code: 1205, vision: 1248, text: 1449 },
-	"gemini-2.5-flash": { vision: 1228, text: 1411 },
-	"glm-5": { code: 1447, text: 1453 },
-	"glm-4.7": { code: 1441, text: 1441 },
-	"glm-4.6": { code: 1356, vision: 1163, text: 1425 },
-	"deepseek-reasoner": { code: 1371, text: 1420 },
-	"deepseek-chat": { code: 1319, text: 1419 },
-	"minimax-m2.1": { code: 1402, text: 1385 },
-	"minimax-m2": { code: 1312, text: 1347 },
-	"kimi-k2.5": { code: 1415, vision: 1239, text: 1450 },
-	"kimi-k2": { code: 1331, text: 1429 },
+export const MODEL_ARENA_PRIORS: Readonly<Record<string, Readonly<ModelArenaScores>>> = {
+	"claude-opus-4-6": { code: 1548, text: 1501 },
+	"claude-opus-4-5": { code: 1465, text: 1469 },
+	"claude-opus-4-1": { code: 1384, text: 1449 },
+	"claude-sonnet-4-6": { code: 1521, text: 1465 },
+	"claude-sonnet-4-5": { code: 1386, text: 1453 },
+	"claude-haiku-4-5": { code: 1309, text: 1407 },
+	"gpt-5.2": { code: 1400, vision: 1231, text: 1440 },
+	"gpt-5": { code: 1392, vision: 1225 },
+	"gpt-5.1": { code: 1339, vision: 1238, text: 1439 },
+	"gpt-5.2-codex": { code: 1338 },
+	"gpt-5.1-codex": { code: 1326 },
+	"gpt-5.1-codex-mini": { code: 1240 },
+	"gemini-3-pro": { code: 1437, vision: 1290, text: 1486 },
+	"gemini-3-flash": { code: 1436, vision: 1274, text: 1475 },
+	"gemini-2.5-pro": { code: 1205, vision: 1247, text: 1448 },
+	"gemini-2.5-flash": { vision: 1213, text: 1411 },
+	"glm-5": { code: 1445, text: 1455 },
+	"glm-4.7": { code: 1439, text: 1443 },
+	"glm-4.6": { code: 1354, vision: 1163, text: 1426 },
+	"deepseek-reasoner": { code: 1370, text: 1422 },
+	"deepseek-chat": { code: 1322, text: 1425 },
+	"minimax-m2.1": { code: 1399, text: 1385 },
+	"minimax-m2": { code: 1309, text: 1347 },
+	"kimi-k2.5": { code: 1431, vision: 1239, text: 1453 },
+	"kimi-k2": { code: 1328, text: 1430 },
 	"qwen3-coder": { code: 1282, text: 1386 },
-	"qwen3-max": { text: 1425 },
-	"grok-4.1": { code: 1204, text: 1463 },
-	"grok-4": { code: 1153, vision: 1182, text: 1410 },
-	"mistral-large-3": { code: 1223, text: 1414 },
-	"devstral-2": { code: 1199 },
-	"devstral-medium": { code: 1099 },
+	"qwen3-max": { text: 1435 },
+	"grok-4.1": { code: 1205, text: 1461 },
+	"grok-4": { code: 1149, vision: 1183, text: 1410 },
+	"mistral-large-3": { code: 1221, text: 1416 },
+	"devstral-2": { code: 1198 },
+	"devstral-medium": { code: 1094 },
 };
+
+/**
+ * Deep-freeze an object and all nested objects.
+ *
+ * @param obj - Object to freeze recursively
+ * @returns The same object, deeply frozen
+ */
+function deepFreeze<T extends Record<string, unknown>>(obj: T): T {
+	Object.freeze(obj);
+	for (const value of Object.values(obj)) {
+		if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+			deepFreeze(value as Record<string, unknown>);
+		}
+	}
+	return obj;
+}
+
+deepFreeze(MODEL_MATRIX);
+deepFreeze(MODEL_ARENA_PRIORS);
 
 /** Valid task types used when validating override payloads. */
 const VALID_TASK_TYPES: readonly TaskType[] = ["code", "vision", "text"];
@@ -292,7 +311,7 @@ export function createModelRatingsLookup(
 	return (modelId: string): ModelRatings | undefined => {
 		const bare = resolveBareModelId(modelId);
 		const key = sortedKeys.find((candidate) => bare.startsWith(candidate));
-		return key ? matrix[key] : undefined;
+		return key ? cloneRatings(matrix[key]) : undefined;
 	};
 }
 

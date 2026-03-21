@@ -102,6 +102,28 @@ describe("resolveModelFuzzy", () => {
 		expect(result?.id).toBe("gemini-3-pro");
 	});
 
+	it("tier 6: normalized substring match — strips separators before substring compare", () => {
+		// "flash3" normalized is "flash3", gemini-3-flash normalized is "gemini3flash" which contains "flash3"?
+		// No — need a query whose normalized form is a substring of a normalized model ID
+		// but does NOT match at tiers 1-5.
+		// Use a model source where the query can only match via tier 6.
+		const tier6Models: ReturnType<ModelSource> = [
+			{ id: "my-special-model-v2", name: "Special Model V2", provider: "vendor" },
+		];
+		// "specialv2" normalized = "specialv2", model ID normalized = "myspecialmodelv2"
+		// "specialv2" is NOT a token match (tokens: ["special", "v2"] would match at tier 4)
+		// Actually tokens would match at tier 4. Need something that fails tier 4 too.
+		// Query that is a single token not in ID/name, but normalized substring works:
+		// "modelv2" → tokens ["model", "v2"] → tier 4 matches (model appears in name).
+		// Better: use a query where token-overlap ties with another but substring doesn't.
+		// Simplest: a query that's a normalized substring but whose raw form contains no spaces/separators
+		const result = resolveModelFuzzy("specialmodelv", () => tier6Models);
+		// tokens: ["specialmodelv"] — not in id "my-special-model-v2" as raw substring (tier 5 fails)
+		// normalized id: "myspecialmodelv2" contains "specialmodelv" → tier 6 hits
+		expect(result).toBeDefined();
+		expect(result?.id).toBe("my-special-model-v2");
+	});
+
 	it("returns undefined for no match", () => {
 		expect(resolveModelFuzzy("nonexistent-model-xyz", source)).toBeUndefined();
 	});

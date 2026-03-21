@@ -57,13 +57,22 @@ interface ModeScoredCandidate extends ScoredCandidate {
 /** Ratings lookup function type. */
 type RatingsLookup = (modelId: string) => ModelRatings | undefined;
 
+/** All supported routing mode names. */
+export const ROUTING_MODES: readonly RoutingMode[] = Object.freeze([
+	"balanced",
+	"cheap",
+	"fast",
+	"quality",
+	"reliable",
+] as const);
+
 /** Built-in routing-mode policies. */
 const DEFAULT_MODE_POLICIES: Readonly<Record<RoutingMode, RoutingModePolicy>> = {
 	balanced: {
 		complexityBias: 0,
 		constraints: { maxErrorRate: 0.08, minUptime: 0.92 },
 		taskFloors: { code: 2, text: 2, vision: 2 },
-		weights: { capability: 0.5, cost: 0.05, latency: 0.15, reliability: 0.2, throughput: 0.1 },
+		weights: { capability: 0.5, cost: 0.1, latency: 0.15, reliability: 0.2, throughput: 0.05 },
 	},
 	cheap: {
 		complexityBias: -1,
@@ -266,6 +275,22 @@ function isExcluded(provider: string, modelId: string, patterns: string[]): bool
 }
 
 /**
+ * Get the default built-in policy for a routing mode.
+ *
+ * @param mode - Routing mode name
+ * @returns Deep copy of the default policy for the mode
+ */
+export function getDefaultModePolicy(mode: RoutingMode): RoutingModePolicy {
+	const base = DEFAULT_MODE_POLICIES[mode];
+	return {
+		complexityBias: base.complexityBias,
+		constraints: { ...base.constraints },
+		taskFloors: { ...base.taskFloors },
+		weights: { ...base.weights },
+	};
+}
+
+/**
  * Merge a built-in mode policy with a partial override.
  *
  * @param mode - Active routing mode
@@ -286,18 +311,25 @@ function getEffectiveModePolicy(
 }
 
 /**
- * Build a lookup of effective costs keyed by "provider/id".
+ * Build a lazy cost index that only scans the registry once per selection call.
  *
- * @returns Map of model key to effective cost
+ * Populated on first lookup, then reused for subsequent pool entries.
+ *
+ * @returns Lookup function from "provider/id" to effective cost
  */
-function buildCostIndex(): Map<string, number> {
-	const index = new Map<string, number>();
-	for (const provider of getProviders()) {
-		for (const model of getModels(provider)) {
-			index.set(`${model.provider}/${model.id}`, (model.cost.input + model.cost.output) / 2);
+function createCostLookup(): (provider: string, modelId: string) => number | undefined {
+	let index: Map<string, number> | undefined;
+	return (provider: string, modelId: string): number | undefined => {
+		if (!index) {
+			index = new Map<string, number>();
+			for (const p of getProviders()) {
+				for (const model of getModels(p)) {
+					index.set(`${model.provider}/${model.id}`, (model.cost.input + model.cost.output) / 2);
+				}
+			}
 		}
-	}
-	return index;
+		return index.get(`${provider}/${modelId}`);
+	};
 }
 
 /**
@@ -349,11 +381,11 @@ function candidatesFromPool(
 	getArenaPriors: (modelId: string) => ModelArenaScores | undefined
 ): ScoredCandidate[] {
 	const candidates: ScoredCandidate[] = [];
-	const costIndex = buildCostIndex();
+	const getCost = createCostLookup();
 	for (const resolved of pool) {
 		const ratings = getRatings(resolved.id);
 		if (!ratings) continue;
-		const effectiveCost = costIndex.get(`${resolved.provider}/${resolved.id}`);
+		const effectiveCost = getCost(resolved.provider, resolved.id);
 		if (effectiveCost === undefined) continue;
 		candidates.push({
 			arenaScores: getArenaPriors(resolved.id),

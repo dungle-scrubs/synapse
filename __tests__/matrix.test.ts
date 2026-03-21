@@ -56,11 +56,11 @@ describe("getModelRatings", () => {
 
 describe("getModelArenaPriors", () => {
 	it("returns priors for known models", () => {
-		expect(getModelArenaPriors("gemini-3-pro")).toEqual({ code: 1442, vision: 1288, text: 1485 });
+		expect(getModelArenaPriors("gemini-3-pro")).toEqual({ code: 1437, vision: 1290, text: 1486 });
 	});
 
 	it("supports nested provider-qualified IDs", () => {
-		expect(getModelArenaPriors("openrouter/z-ai/glm-5")).toEqual({ code: 1447, text: 1453 });
+		expect(getModelArenaPriors("openrouter/z-ai/glm-5")).toEqual({ code: 1445, text: 1455 });
 	});
 
 	it("returns undefined for unknown models", () => {
@@ -69,12 +69,12 @@ describe("getModelArenaPriors", () => {
 
 	it("resolves gpt-5 priors without shadowing gpt-5.1 or gpt-5.2", () => {
 		const gpt5 = getModelArenaPriors("gpt-5-something");
-		expect(gpt5).toEqual({ code: 1394, vision: 1225 });
+		expect(gpt5).toEqual({ code: 1392, vision: 1225 });
 		// Longer prefixes must still resolve to their own entries
 		const gpt51 = getModelArenaPriors("gpt-5.1-turbo");
-		expect(gpt51?.code).toBe(1343);
+		expect(gpt51?.code).toBe(1339);
 		const gpt52 = getModelArenaPriors("gpt-5.2-chat-latest");
-		expect(gpt52?.code).toBe(1396);
+		expect(gpt52?.code).toBe(1400);
 	});
 });
 
@@ -260,6 +260,67 @@ describe("modelSupportsTask", () => {
 	it("cross-modality: vision task excludes text-only models", () => {
 		expect(modelSupportsTask("glm-5", "vision", 1)).toBe(false);
 		expect(modelSupportsTask("gemini-3-pro", "vision", 5)).toBe(true);
+	});
+});
+
+describe("getModelRatings — mutation safety", () => {
+	it("returns a defensive copy that cannot corrupt the base matrix", () => {
+		const first = getModelRatings("claude-opus-4-6");
+		if (!first) throw new Error("expected ratings");
+		first.code = 1;
+
+		const second = getModelRatings("claude-opus-4-6");
+		expect(second?.code).toBe(5); // must NOT be corrupted
+	});
+
+	it("successive calls return independent copies", () => {
+		const a = getModelRatings("gemini-3-pro");
+		const b = getModelRatings("gemini-3-pro");
+		expect(a).toEqual(b);
+		expect(a).not.toBe(b); // different object references
+	});
+
+	it("returns a defensive copy when overrides are applied", () => {
+		const overrides = { "claude-opus-4-6": { code: 3 as const, text: 3 as const } };
+		const first = getModelRatings("claude-opus-4-6", { matrixOverrides: overrides });
+		if (!first) throw new Error("expected ratings");
+		first.code = 1;
+
+		const second = getModelRatings("claude-opus-4-6", { matrixOverrides: overrides });
+		expect(second?.code).toBe(3); // must NOT be corrupted
+	});
+});
+
+describe("MODEL_MATRIX immutability", () => {
+	it("MODEL_MATRIX is deeply frozen at runtime", () => {
+		expect(Object.isFrozen(MODEL_MATRIX)).toBe(true);
+		for (const ratings of Object.values(MODEL_MATRIX)) {
+			expect(Object.isFrozen(ratings)).toBe(true);
+		}
+	});
+
+	it("MODEL_ARENA_PRIORS is deeply frozen at runtime", () => {
+		expect(Object.isFrozen(MODEL_ARENA_PRIORS)).toBe(true);
+		for (const scores of Object.values(MODEL_ARENA_PRIORS)) {
+			expect(Object.isFrozen(scores)).toBe(true);
+		}
+	});
+
+	it("mutations throw in strict mode", () => {
+		expect(() => {
+			(MODEL_MATRIX as Record<string, unknown>)["claude-opus-4-6"] = { code: 1 };
+		}).toThrow();
+	});
+});
+
+describe("getModelArenaPriors — mutation safety", () => {
+	it("returns a defensive copy", () => {
+		const first = getModelArenaPriors("gemini-3-pro");
+		expect(first).toBeDefined();
+		(first as Record<string, unknown>).code = 0;
+
+		const second = getModelArenaPriors("gemini-3-pro");
+		expect(second?.code).toBe(1437); // must NOT be corrupted
 	});
 });
 

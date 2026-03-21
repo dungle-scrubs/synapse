@@ -72,7 +72,12 @@ export type {
 } from "./classifier.js";
 
 // Selector
-export { selectModels, selectModelsExplained } from "./selector.js";
+export {
+	getDefaultModePolicy,
+	ROUTING_MODES,
+	selectModels,
+	selectModelsExplained,
+} from "./selector.js";
 export type {
 	CandidateScore,
 	FilterSummary,
