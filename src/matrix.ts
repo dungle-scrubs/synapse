@@ -32,7 +32,7 @@ import { isRecord } from "./utils.js";
  *
  * Ratings use base model scores when available — no thinking, default effort.
  */
-export const MODEL_MATRIX: Record<string, ModelRatings> = {
+export const MODEL_MATRIX: Readonly<Record<string, Readonly<ModelRatings>>> = {
 	// Anthropic
 	"claude-opus-4-6": { code: 5, vision: 3, text: 5 },
 	"claude-opus-4-5": { code: 5, vision: 3, text: 5 },
@@ -86,7 +86,7 @@ export const MODEL_MATRIX: Record<string, ModelRatings> = {
  * These do not replace matrix tiers. They only add granularity when selecting
  * among models that already pass tier filters.
  */
-export const MODEL_ARENA_PRIORS: Record<string, ModelArenaScores> = {
+export const MODEL_ARENA_PRIORS: Readonly<Record<string, Readonly<ModelArenaScores>>> = {
 	"claude-opus-4-6": { code: 1548, text: 1501 },
 	"claude-opus-4-5": { code: 1465, text: 1469 },
 	"claude-opus-4-1": { code: 1384, text: 1449 },
@@ -120,6 +120,25 @@ export const MODEL_ARENA_PRIORS: Record<string, ModelArenaScores> = {
 	"devstral-2": { code: 1198 },
 	"devstral-medium": { code: 1094 },
 };
+
+/**
+ * Deep-freeze an object and all nested objects.
+ *
+ * @param obj - Object to freeze recursively
+ * @returns The same object, deeply frozen
+ */
+function deepFreeze<T extends Record<string, unknown>>(obj: T): T {
+	Object.freeze(obj);
+	for (const value of Object.values(obj)) {
+		if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+			deepFreeze(value as Record<string, unknown>);
+		}
+	}
+	return obj;
+}
+
+deepFreeze(MODEL_MATRIX);
+deepFreeze(MODEL_ARENA_PRIORS);
 
 /** Valid task types used when validating override payloads. */
 const VALID_TASK_TYPES: readonly TaskType[] = ["code", "vision", "text"];
@@ -292,7 +311,7 @@ export function createModelRatingsLookup(
 	return (modelId: string): ModelRatings | undefined => {
 		const bare = resolveBareModelId(modelId);
 		const key = sortedKeys.find((candidate) => bare.startsWith(candidate));
-		return key ? matrix[key] : undefined;
+		return key ? cloneRatings(matrix[key]) : undefined;
 	};
 }
 
